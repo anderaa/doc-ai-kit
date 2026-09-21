@@ -4,12 +4,22 @@ Projects pin one exact harness version. Read the entry for a version before movi
 project onto it: some releases change how answers are scored, and a number measured under
 one version is not comparable with a number measured under another.
 
-## Unreleased
+## 0.1.3
 
 **Changes scores** wherever a reply could not be read. Such a reply used to be scored as the
 model abstaining on every task -- credit wherever the gold was null, and no sign anything had
 failed. It is now retried with a fresh generation and, if it still fails, scored as wrong and
 listed. By default a scoring run with any such reply refuses to report numbers.
+
+Upgrading a project:
+
+- **Re-run, don't rescore.** A run saved under 0.1.2 stored a failed reply as ordinary nulls,
+  so `rescore` has nothing to mark as a failure and reproduces the old number. Only running
+  the program again finds the failures. Record the upgrade in `decisions.md`.
+- **Runs that used to report may now stop.** With `evaluation.max_failure_rate` at its default
+  of 0, a run with an unreadable reply refuses rather than reporting a number that includes
+  it. That is the point; raise the rate only as a recorded decision.
+- Existing config.yaml files need no change: the new `evaluation` section has defaults.
 
 - **Strict parsing.** DSPy fills an omitted nullable field with null. Since every task is
   nullable, a reply cut off partway came back with its remaining fields null. The program now

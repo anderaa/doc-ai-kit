@@ -98,7 +98,7 @@ examples/adversarial/  the matcher check: does scoring hold up on documents buil
 tag, because that works today without publishing anything:
 
 ```
-doc-harness @ git+https://github.com/anderaa/doc-harness.git@v0.1.2
+doc-harness @ git+https://github.com/anderaa/doc-harness.git@v0.1.3
 ```
 
 `--pin-mode pypi` switches to `doc-harness==X.Y.Z` once the package is published to an
