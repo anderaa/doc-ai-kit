@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any
 
 from doc_harness.config import Config
-from doc_harness.evaluate import is_abstention
+from doc_harness.evaluate import is_abstention, to_json_value
 from doc_harness.metric import get_field
 from doc_harness.program import fresh_generation
 from doc_harness.registry import Registry, TaskType
@@ -65,10 +65,14 @@ class DocumentOutcome:
         return not self.error
 
     def to_dict(self) -> dict[str, Any]:
-        """Return the raw checkpoint payload."""
+        """Return the raw checkpoint payload, with typed values as structured JSON.
+
+        Not ``default=str``: that writes a number as ``"value=375000.0 unit='USD'"``, which is
+        useless to anyone consuming outputs.jsonl and is read back as a string on resume.
+        """
         return {
             "doc_id": self.doc_id,
-            "values": self.values,
+            "values": {task_id: to_json_value(value) for task_id, value in self.values.items()},
             "error": self.error,
             "attempts": self.attempts,
             "at": datetime.now(UTC).isoformat(timespec="seconds"),
@@ -135,9 +139,7 @@ def _load_checkpoint(raw_dir: Path, doc_id: str) -> DocumentOutcome | None:
 def _write_checkpoint(raw_dir: Path, outcome: DocumentOutcome) -> None:
     """Write one document's raw response before any post-processing touches it."""
     raw_dir.mkdir(parents=True, exist_ok=True)
-    _raw_path(raw_dir, outcome.doc_id).write_text(
-        json.dumps(outcome.to_dict(), indent=2, default=str) + "\n", encoding="utf-8"
-    )
+    _raw_path(raw_dir, outcome.doc_id).write_text(json.dumps(outcome.to_dict(), indent=2) + "\n", encoding="utf-8")
 
 
 def _run_one(program: Any, registry: Registry, doc_id: str, text: str, max_retries: int) -> DocumentOutcome:
@@ -232,10 +234,10 @@ def write_outputs(path: Path, outcomes: Sequence[DocumentOutcome]) -> None:
     for outcome in outcomes:
         row: dict[str, Any] = {"doc_id": outcome.doc_id, "ok": outcome.ok}
         if outcome.ok:
-            row["values"] = outcome.values
+            row["values"] = {task_id: to_json_value(value) for task_id, value in outcome.values.items()}
         else:
             row["error"] = outcome.error
-        lines.append(json.dumps(row, sort_keys=True, default=str))
+        lines.append(json.dumps(row, sort_keys=True))
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     logger.info("wrote %s", path)
 

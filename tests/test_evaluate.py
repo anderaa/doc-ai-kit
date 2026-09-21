@@ -369,7 +369,7 @@ def test_typed_predictions_round_trip_through_json(fixtures_dir: Path, tmp_path:
     # structured, not stringified
     assert saved["contract_value"] == {"value": 375000.0, "unit": "USD"}
     assert saved["effective_date"] == {"value": "2024-06-15", "granularity": "day"}
-    assert saved["governing_law_span"] == {"start": 100, "end": 250}
+    assert saved["governing_law_span"] == {"start": 100, "end": 250, "text": None}
 
     rescored = score_split(registry, metric, [gold], [saved], support_floor=1, measurable_floor=1)
     assert rescored.aggregate == pytest.approx(original.aggregate)

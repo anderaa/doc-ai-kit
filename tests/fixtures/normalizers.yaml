@@ -125,6 +125,9 @@ span:
     - {input: [10, 20], expect: {start: 10, end: 20}}
     - {input: {start: 20, end: 10}, expect: null}
     - {input: null, expect: null}
+    # the model's abstention arrives as a word now that the span field is text
+    - {input: "null", expect: null}
+    - {input: "N/A", expect: null}
 
 person_name:
   params: {}

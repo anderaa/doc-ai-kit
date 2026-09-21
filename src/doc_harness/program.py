@@ -19,7 +19,9 @@ from typing import Any
 
 from doc_harness.adapters import strict_version_of
 from doc_harness.config import OptimizationConfig
-from doc_harness.registry import Registry
+from doc_harness.normalize import is_null
+from doc_harness.registry import Registry, TaskType
+from doc_harness.spans import locate_quote
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +74,7 @@ def build_program(
         def __init__(self) -> None:
             super().__init__()
             self.task_ids = list(registry.ids)
+            self.span_tasks = {task.id for task in registry if TaskType(task.type) is TaskType.SPAN}
             self.group_tasks = {group: [task.id for task in tasks] for group, tasks in registry.groups().items()}
             for group, predictor in predictors.items():
                 setattr(self, _attribute_for(group), predictor)
@@ -90,6 +93,8 @@ def build_program(
                     prediction = predictor(**{INPUT_FIELD: document})
                     for task_id in task_ids:
                         merged[task_id] = getattr(prediction, task_id, None)
+            for task_id in self.span_tasks:
+                merged[task_id] = _quote_to_span(merged[task_id], document)
             return dspy.Prediction(**merged)
 
     program = DocumentProgram()
@@ -100,6 +105,22 @@ def build_program(
         len(registry),
     )
     return program
+
+
+def _quote_to_span(value: Any, document: str) -> Any:
+    """Turn a quoted passage into offsets, leaving anything it cannot place as it was.
+
+    A null stays null: an abstention. A quote that is not in the document stays a string,
+    which the span matcher scores as a wrong answer -- the model named a passage that does
+    not exist, which is neither an abstention nor a near miss.
+    """
+    if not isinstance(value, str) or not value.strip():
+        return value
+    # a span field is text, so the model's null arrives as the word "null", not as None
+    if is_null(value):
+        return None
+    located = locate_quote(value, document)
+    return located if located is not None else value
 
 
 def _attribute_for(group: str) -> str:

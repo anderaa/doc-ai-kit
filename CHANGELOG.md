@@ -4,6 +4,28 @@ Projects pin one exact harness version. Read the entry for a version before movi
 project onto it: some releases change how answers are scored, and a number measured under
 one version is not comparable with a number measured under another.
 
+## Unreleased
+
+**Changes scores** on span tasks, and changes what the model is asked for.
+
+- **Spans are asked for as quotes.** A model asked for character offsets has to count
+  characters. On the adversarial corpus it found the right sentence and placed it 84
+  characters early. The program now asks for the passage verbatim and the harness locates it,
+  tolerating line breaks, typographic quotes and dashes, capitalisation, and wrapping quotation
+  marks or ellipses. A paraphrase is not found and scores as a wrong answer. Span F1 on the
+  adversarial corpus went from 0.950 to 1.000.
+- Gold spans are shown to the model as the passage they cover, so a labeled demonstration
+  matches the instruction instead of showing offsets it is told never to give.
+- Upgrading a project: reword span questions to name the passage ("The governing-law clause"),
+  not to ask for offsets -- the harness now appends how to answer. **Recompile** any program
+  with a span task: one compiled under 0.1.3 carries demonstrations in the old format.
+
+Fixed:
+
+- **outputs.jsonl and production checkpoints wrote typed values as Python repr text** -- a
+  contract value arrived as `"value=375000.0 unit='USD'"`. They are now structured JSON, and a
+  resumed run reads them back as values rather than strings.
+
 ## 0.1.3
 
 **Changes scores** wherever a reply could not be read. Such a reply used to be scored as the

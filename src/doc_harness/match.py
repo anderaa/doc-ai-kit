@@ -44,6 +44,9 @@ def _render(value: Any) -> str:
     if isinstance(value, Quantity):
         return f"{value.value:g}{' ' + value.unit if value.unit else ''}"
     if isinstance(value, Span):
+        if value.text:
+            excerpt = " ".join(value.text.split())
+            return f"[{value.start}:{value.end}] \"{excerpt[:60]}{'...' if len(excerpt) > 60 else ''}\""
         return f"[{value.start}:{value.end}]"
     if isinstance(value, frozenset | set):
         return "{" + ", ".join(sorted(str(v) for v in value)) + "}"

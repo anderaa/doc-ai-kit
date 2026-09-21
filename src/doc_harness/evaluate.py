@@ -610,7 +610,7 @@ def write_predictions(path: Path, registry: Registry, golds: Sequence[Any], pred
     for gold, pred in zip(golds, preds, strict=True):
         row: dict[str, Any] = {
             "doc_id": get_field(gold, "doc_id"),
-            "predicted": {task.id: _jsonable(get_field(pred, task.id)) for task in registry},
+            "predicted": {task.id: to_json_value(get_field(pred, task.id)) for task in registry},
         }
         if isinstance(pred, FailedReply):
             row["failed"] = {"error": pred.error, "attempts": pred.attempts}
@@ -619,8 +619,8 @@ def write_predictions(path: Path, registry: Registry, golds: Sequence[Any], pred
     logger.info("wrote %s", path)
 
 
-def _jsonable(value: Any) -> Any:
-    """Render a predicted value as structured JSON.
+def to_json_value(value: Any) -> Any:
+    """Render a value as structured JSON, for every file the harness writes.
 
     Typed outputs are pydantic models. Falling back to ``str`` would write
     ``\"value=375000.0 unit='USD'\"``, which re-scoring would then have to parse back out of a
@@ -629,9 +629,9 @@ def _jsonable(value: Any) -> Any:
     if isinstance(value, BaseModel):
         return value.model_dump(mode="json")
     if isinstance(value, list | tuple):
-        return [_jsonable(item) for item in value]
+        return [to_json_value(item) for item in value]
     if isinstance(value, set | frozenset):
-        return sorted(_jsonable(item) for item in value)
+        return sorted(to_json_value(item) for item in value)
     if isinstance(value, str | int | float | bool) or value is None:
         return value
     return str(value)

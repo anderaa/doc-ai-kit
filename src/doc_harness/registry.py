@@ -17,9 +17,16 @@ from typing import Annotated, Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
-from doc_harness.values import Granularity, PartialDate, Quantity, Span
+from doc_harness.values import Granularity, PartialDate, Quantity
 
 logger = logging.getLogger(__name__)
+
+# appended to every span task's question. Counting characters is where a model goes wrong, so it
+# is never asked to; it quotes the passage and the harness finds the offsets itself
+SPAN_QUOTE_INSTRUCTION = (
+    "Answer by quoting the passage verbatim from the document, as one continuous excerpt. "
+    "Do not give character offsets. Null if the document has no such passage."
+)
 
 # the starting instruction before any optimizer has rewritten it; deliberately plain, so a
 # baseline measures the questions themselves rather than a hand-tuned preamble
@@ -323,7 +330,8 @@ _BASE_OUTPUT_TYPE: dict[TaskType, Any] = {
     TaskType.EXTRACT_LIST: list[str],
     TaskType.EXTRACT_NUMERIC: Quantity,
     TaskType.EXTRACT_DATE: PartialDate,
-    TaskType.SPAN: Span,
+    # asked for as a verbatim quote; the program turns it into offsets (see spans.py)
+    TaskType.SPAN: str,
 }
 
 
@@ -477,7 +485,10 @@ class Registry:
             input_field: (str, dspy.InputField(desc=input_description)),
         }
         for task in tasks:
-            fields[task.id] = (self.output_type(task), dspy.OutputField(desc=task.question.strip()))
+            question = task.question.strip()
+            if TaskType(task.type) is TaskType.SPAN:
+                question = f"{question}\n{SPAN_QUOTE_INSTRUCTION}"
+            fields[task.id] = (self.output_type(task), dspy.OutputField(desc=question))
         name = "".join(part.capitalize() for part in group.replace("-", "_").split("_")) + "Signature"
         return make_signature(fields, instructions or DEFAULT_INSTRUCTIONS, name)
 

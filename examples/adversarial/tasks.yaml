@@ -58,8 +58,8 @@ tasks:
 
   - id: governing_law_span
     type: span
+    # describes which passage; the harness asks for it as a quote and finds the offsets itself
     question: >
-      The character offsets, into the document text you were given, of the sentence stating
-      which state's law governs. Return start and end offsets.
+      The sentence stating which state's law governs the agreement.
     match: {matcher: span, overlap_threshold: 0.5}
     group: spans

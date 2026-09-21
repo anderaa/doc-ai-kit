@@ -64,7 +64,9 @@ tasks:
 
   # - id: governing_law_span
   #   type: span
-  #   question: The character offsets of the governing-law clause in the extracted text.
+  #   # say which passage, not how to report it: the harness asks the model to quote it and
+  #   # works out the character offsets itself, because models miscount characters
+  #   question: The governing-law clause.
   #   match: {matcher: span, overlap_threshold: 0.5}
   #   # a group gets its own predictor, and therefore its own tunable instruction
   #   group: spans

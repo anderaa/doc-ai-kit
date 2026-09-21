@@ -19,7 +19,7 @@ from typing import Any
 from dateutil import parser as date_parser
 
 from doc_harness.hooks import register_normalizer
-from doc_harness.values import Granularity, PartialDate, Quantity, Span
+from doc_harness.values import Granularity, PartialDate, Quantity, QuotedSpan, Span
 
 # surface forms that mean "no answer"; a project can override via params["null_tokens"]
 NULL_TOKENS = frozenset(
@@ -168,6 +168,11 @@ def collapse_whitespace(text: str) -> str:
 
 def _as_text(value: Any) -> str:
     return value if isinstance(value, str) else str(value)
+
+
+def is_null(value: Any, params: Mapping[str, Any] | None = None) -> bool:
+    """Return whether a raw value is an abstention: None, or a null word such as "N/A"."""
+    return _is_null(value, params or {})
 
 
 def _is_null(value: Any, params: Mapping[str, Any]) -> bool:
@@ -466,6 +471,12 @@ def span(value: Any, params: Mapping[str, Any]) -> Span | str | None:
         return None
     if isinstance(value, Span):
         return value if value.end > value.start else None
+    if isinstance(value, QuotedSpan):
+        # a gold span carried as its text for demonstrations; scored on its offsets
+        return Span(start=value.start, end=value.end, text=str(value)) if value.end > value.start else None
+    # checked after the quoted-span case, so a gold passage whose text is "N/A" stays a passage
+    if isinstance(value, str) and _is_null(value, params):
+        return None
     if isinstance(value, Mapping) and "start" in value and "end" in value:
         start, end = int(value["start"]), int(value["end"])
     elif isinstance(value, list | tuple) and len(value) == 2:

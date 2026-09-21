@@ -15,7 +15,7 @@ from doc_harness.registry import (
     TaskSpecError,
     TaskType,
 )
-from doc_harness.values import PartialDate, Quantity, Span
+from doc_harness.values import PartialDate, Quantity
 
 
 @pytest.fixture
@@ -49,7 +49,8 @@ def test_output_types(all_types: Registry) -> None:
         "signatories": list[str] | None,
         "contract_value": Quantity | None,
         "effective_date": PartialDate | None,
-        "governing_law_span": Span | None,
+        # asked for as a verbatim quote; the program converts it to offsets
+        "governing_law_span": str | None,
     }
     for task_id, want in expected.items():
         got = all_types.output_type(all_types.by_id(task_id))

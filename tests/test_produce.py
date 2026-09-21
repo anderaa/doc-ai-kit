@@ -355,3 +355,32 @@ def test_each_retry_uses_its_own_rollout(tmp_path: Path, toy_registry: Registry,
     assert len(seen) == CORPUS
     # the first attempt shares the cache; each retry gets its own key, in every worker thread
     assert all(rollouts == [None, 2, 3] for rollouts in seen.values()), seen
+
+
+def test_typed_values_reach_the_deliverable_as_structured_json(tmp_path: Path) -> None:
+    """outputs.jsonl is what the client gets: no Python repr strings in it, ever."""
+    from doc_harness.values import PartialDate, Quantity, Span
+
+    values = {
+        "contract_value": Quantity(value=375000.0, unit="USD"),
+        "effective_date": PartialDate(value="2024-11-15", granularity="day"),
+        "governing_law_span": Span(start=726, end=877),
+    }
+    outcome = DocumentOutcome(doc_id="d1", values=values)
+    write_outputs(tmp_path / "outputs.jsonl", [outcome])
+    row = json.loads((tmp_path / "outputs.jsonl").read_text(encoding="utf-8"))
+    assert row["values"]["contract_value"] == {"value": 375000.0, "unit": "USD"}
+    assert row["values"]["effective_date"] == {"value": "2024-11-15", "granularity": "day"}
+    assert row["values"]["governing_law_span"]["start"] == 726
+
+
+def test_a_resumed_run_reads_structured_values_back(tmp_path: Path) -> None:
+    """A checkpoint written as repr text would come back as a string on resume."""
+    from doc_harness.produce import _load_checkpoint, _write_checkpoint
+    from doc_harness.values import Quantity
+
+    raw_dir = tmp_path / "raw"
+    _write_checkpoint(raw_dir, DocumentOutcome(doc_id="d1", values={"contract_value": Quantity(value=5.0, unit="USD")}))
+    resumed = _load_checkpoint(raw_dir, "d1")
+    assert resumed is not None
+    assert resumed.values["contract_value"] == {"value": 5.0, "unit": "USD"}

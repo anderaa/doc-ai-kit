@@ -15,7 +15,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from doc_harness.registry import Registry
+from doc_harness.registry import Registry, TaskType
+from doc_harness.values import QuotedSpan
 
 logger = logging.getLogger(__name__)
 
@@ -223,12 +224,16 @@ def build_examples(
     records: Sequence[LabelRecord],
     texts: Mapping[str, str],
     input_field: str = "document",
+    registry: Registry | None = None,
 ) -> list[Any]:
     """Build DSPy examples from labeled records and cached text.
 
     :param records: The labeled documents to include
     :param texts: Document id to extracted text
     :param input_field: The name of the program's input field
+    :param registry: The parsed tasks.yaml. Given it, gold spans are carried as the passage
+        they cover, so a labeled demonstration shows a quote -- the answer the program is
+        asked for -- rather than a pair of offsets it is told never to give
     :returns: One ``dspy.Example`` per record, with only the input field marked as input
     """
     import dspy
@@ -236,11 +241,31 @@ def build_examples(
     missing = [record.doc_id for record in records if record.doc_id not in texts]
     if missing:
         raise DatasetError(f"no cached text for {len(missing)} labeled document(s): {', '.join(sorted(missing))}")
+    span_tasks = (
+        {task.id for task in registry if TaskType(task.type) is TaskType.SPAN} if registry is not None else set()
+    )
     examples = []
     for record in records:
-        payload = {input_field: texts[record.doc_id], "doc_id": record.doc_id, **record.labels}
+        text = texts[record.doc_id]
+        labels = dict(record.labels)
+        for task_id in span_tasks:
+            labels[task_id] = _as_quoted_span(labels.get(task_id), text, record.doc_id, task_id)
+        payload = {input_field: text, "doc_id": record.doc_id, **labels}
         examples.append(dspy.Example(**payload).with_inputs(input_field))
     return examples
+
+
+def _as_quoted_span(value: Any, text: str, doc_id: str, task_id: str) -> Any:
+    """Carry a gold span as the passage it covers, keeping its offsets for scoring."""
+    if not isinstance(value, Mapping) or "start" not in value or "end" not in value:
+        return value
+    start, end = int(value["start"]), int(value["end"])
+    if not 0 <= start < end <= len(text):
+        raise DatasetError(
+            f"{doc_id}: {task_id} span [{start}:{end}] falls outside the cached text ({len(text)} characters); "
+            "it was probably labeled against a different extraction"
+        )
+    return QuotedSpan(text[start:end], start, end)
 
 
 def select(records: Sequence[LabelRecord], doc_ids: Iterable[str]) -> list[LabelRecord]:

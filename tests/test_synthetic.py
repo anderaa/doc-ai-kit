@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 from conftest import load_example
 
-from doc_harness.dataset import load_labels, load_splits
+from doc_harness.dataset import build_examples, load_labels, load_splits
 from doc_harness.metric import build_metric
 from doc_harness.registry import Registry, TaskType
 from doc_harness.splits import class_supports, make_splits
@@ -108,3 +108,17 @@ def test_extraction_manifest_is_written(corpus: Path) -> None:
     manifest = (corpus / "data" / "extraction_manifest.csv").read_text(encoding="utf-8")
     assert manifest.count("\n") == 21  # header plus twenty documents
     assert "doc_00" in manifest
+
+
+def test_gold_spans_read_back_as_the_governing_law_sentence(registry: Registry, corpus: Path) -> None:
+    """Against real extracted text: each gold span, carried as a quote, is exactly the clause."""
+    from doc_harness.extract import load_texts
+    from doc_harness.values import QuotedSpan
+
+    records = load_labels(corpus / "data" / "labels.jsonl")
+    texts = load_texts(corpus / "data" / "text", [record.doc_id for record in records])
+    for example in build_examples(records, texts, registry=registry):
+        quote = example.governing_law_span
+        assert isinstance(quote, QuotedSpan)
+        assert " ".join(str(quote).split()).startswith("This Agreement shall be governed by")
+        assert str(quote).endswith("principles.")

@@ -48,10 +48,30 @@ class Span(BaseModel):
 
     start: int
     end: int
+    # the text the offsets cover, kept so a report can show the passage and not just numbers
+    text: str | None = None
 
     def tokens(self) -> set[int]:
         """Return the set of character offsets this span covers."""
         return set(range(self.start, self.end))
+
+
+class QuotedSpan(str):
+    """A gold span as the model would give it: the passage's text, carrying its offsets.
+
+    Programs are asked to quote a span rather than count characters, so a gold span shown to
+    them as a labeled demonstration has to look like a quote too. Scoring still happens on the
+    offsets, which the span normalizer reads from this object.
+    """
+
+    start: int
+    end: int
+
+    def __new__(cls, text: str, start: int, end: int) -> QuotedSpan:
+        instance = super().__new__(cls, text)
+        instance.start = start
+        instance.end = end
+        return instance
 
 
 @dataclass(frozen=True)

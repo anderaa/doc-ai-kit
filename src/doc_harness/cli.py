@@ -137,7 +137,7 @@ class Project:
         """Build DSPy examples for a set of documents."""
         records = select(load_labels(self.data / "labels.jsonl"), doc_ids)
         texts = load_texts(self.data / "text", doc_ids)
-        return build_examples(records, texts)
+        return build_examples(records, texts, registry=self.registry)
 
     def record_decision(self, heading: str, body: str) -> None:
         """Append a decision to decisions.md, where human choices are kept."""
