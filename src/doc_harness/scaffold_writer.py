@@ -29,6 +29,13 @@ EMPTY_DIRS = (
 # files copied with their template suffix removed
 TEMPLATE_SUFFIX = ".template"
 
+# where the harness is published. A project pins one exact version of it, and that pin has
+# to actually resolve: an unpublishable `doc-harness==X.Y.Z` fails at the project's first
+# `make sync`, which is the worst possible moment to discover it.
+HARNESS_REPO = "https://github.com/anderaa/doc-harness.git"
+
+PIN_MODES = ("git", "pypi", "path")
+
 
 class ScaffoldError(RuntimeError):
     """Raised when a project directory cannot be created as asked."""
@@ -42,6 +49,39 @@ class ScaffoldOptions:
     harness_version: str = __version__
     python_version: str = "3.12.11"
     python_requires: str = "3.12"
+    # how the project refers to the harness: a git tag, a package index, or a local checkout
+    pin_mode: str = "git"
+    repo: str = HARNESS_REPO
+    harness_path: Path | None = None
+
+    def __post_init__(self) -> None:
+        if self.pin_mode not in PIN_MODES:
+            raise ScaffoldError(f"unknown pin mode {self.pin_mode!r}; expected one of {', '.join(PIN_MODES)}")
+        if self.pin_mode == "path" and self.harness_path is None:
+            raise ScaffoldError("pin mode 'path' needs --harness-path pointing at a harness checkout")
+
+    @property
+    def pin(self) -> str:
+        """Return the dependency line the project pins the harness with.
+
+        Exact in every mode: a tag for git, an equality specifier for an index, an absolute
+        path for a local checkout.
+        """
+        if self.pin_mode == "pypi":
+            return f"doc-harness=={self.harness_version}"
+        if self.pin_mode == "path":
+            assert self.harness_path is not None  # guaranteed by __post_init__
+            return f"doc-harness @ file://{self.harness_path.resolve()}"
+        return f"doc-harness @ git+{self.repo}@v{self.harness_version}"
+
+    @property
+    def lock_flags(self) -> str:
+        """Return the pip-compile flags the project's Makefile should use.
+
+        Hashes and VCS pins are mutually exclusive: pip cannot hash a git checkout, so a
+        project pinned to a tag locks without them and relies on the tag for exactness.
+        """
+        return "--generate-hashes " if self.pin_mode == "pypi" else ""
 
     @property
     def project_slug(self) -> str:
@@ -57,6 +97,8 @@ class ScaffoldOptions:
             "HARNESS_VERSION": self.harness_version,
             "PYTHON_VERSION": self.python_version,
             "PYTHON_REQUIRES": self.python_requires,
+            "HARNESS_PIN": self.pin,
+            "LOCK_FLAGS": self.lock_flags,
         }
 
 

@@ -56,10 +56,54 @@ def test_scaffold_writes_the_guidance_layer(project: Path) -> None:
 
 
 def test_scaffold_pins_an_exact_harness_version(project: Path) -> None:
-    """The pin is why newproject has to run outside a project."""
+    """The pin is why newproject has to run outside a project -- and it has to resolve.
+
+    An unpublishable `doc-harness==X.Y.Z` looks like a correct exact pin and fails at the
+    project's first `make sync`, which is the worst moment to find out.
+    """
     text = (project / "pyproject.toml").read_text(encoding="utf-8")
-    assert f'"doc-harness=={__version__}"' in text
+    assert f"git+https://github.com/anderaa/doc-harness.git@v{__version__}" in text
     assert "doc-harness>=" not in text
+
+
+@pytest.mark.parametrize(
+    "options,expected",
+    [
+        (ScaffoldOptions(project_name="p", pin_mode="pypi"), f"doc-harness=={__version__}"),
+        (
+            ScaffoldOptions(project_name="p", pin_mode="git", repo="https://example.invalid/h.git"),
+            f"doc-harness @ git+https://example.invalid/h.git@v{__version__}",
+        ),
+    ],
+)
+def test_pin_modes(options: ScaffoldOptions, expected: str) -> None:
+    assert options.pin == expected
+
+
+def test_path_pin_is_absolute(tmp_path: Path) -> None:
+    options = ScaffoldOptions(project_name="p", pin_mode="path", harness_path=tmp_path)
+    assert options.pin == f"doc-harness @ file://{tmp_path.resolve()}"
+
+
+def test_unknown_pin_mode_fails_loudly() -> None:
+    with pytest.raises(ScaffoldError, match="unknown pin mode"):
+        ScaffoldOptions(project_name="p", pin_mode="telepathy")
+
+
+def test_path_pin_needs_a_path() -> None:
+    with pytest.raises(ScaffoldError, match="needs --harness-path"):
+        ScaffoldOptions(project_name="p", pin_mode="path")
+
+
+def test_hashes_are_dropped_for_vcs_pins(tmp_path: Path) -> None:
+    """pip cannot hash a git checkout, so a git-pinned project must not ask it to."""
+    git_project = tmp_path / "git"
+    create_project(git_project, ScaffoldOptions(project_name="g", pin_mode="git"))
+    assert "--generate-hashes" not in (git_project / "Makefile").read_text(encoding="utf-8")
+
+    pypi_project = tmp_path / "pypi"
+    create_project(pypi_project, ScaffoldOptions(project_name="p", pin_mode="pypi"))
+    assert "--generate-hashes" in (pypi_project / "Makefile").read_text(encoding="utf-8")
 
 
 def test_scaffold_substitutes_the_project_name(project: Path) -> None:

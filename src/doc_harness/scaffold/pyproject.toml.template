@@ -9,7 +9,7 @@ description = "doc-harness project: {{PROJECT_NAME}}"
 requires-python = ">={{PYTHON_REQUIRES}}"
 dependencies = [
     # exact pin: the harness is a fixed dependency of this project, never hand-edited
-    "doc-harness=={{HARNESS_VERSION}}",
+    "{{HARNESS_PIN}}",
 ]
 
 [tool.black]

@@ -85,7 +85,30 @@ ledger.csv        one row per completed project
 examples/synthetic/  the acceptance test corpus
 ```
 
-## Known deviation from the brief
+## Installing into a project
+
+`newproject` pins the harness exactly, and the pin has to resolve. The default is a git
+tag, because that works today without publishing anything:
+
+```
+doc-harness @ git+https://github.com/anderaa/doc-harness.git@v0.1.1
+```
+
+`--pin-mode pypi` switches to `doc-harness==X.Y.Z` once the package is published to an
+index, and `--pin-mode path --harness-path ...` points at a local checkout for harness
+development. Hashes and git pins are mutually exclusive -- pip cannot hash a checkout -- so
+a git-pinned project locks without `--generate-hashes` and relies on the tag for exactness.
+
+Cutting a release means bumping `version` in `pyproject.toml` and pushing a matching
+`vX.Y.Z` tag. Projects scaffolded before the bump keep pointing at their own tag.
+
+## Known deviations from the brief
+
+**pyenv and pip-tools, not uv.** BUILD.md §9 assumes `uv tool install` / `uvx`. The harness
+locks with `pip-compile` and projects use a pyenv virtualenv instead. Nothing else changes:
+the pin is still exact and the lock is still committed.
+
+
 
 **Production uses concurrent requests, not a provider Batch API.** BUILD.md asks for the
 Batch API. Going through DSPy's adapters is what keeps typed parsing and the normalizers

@@ -48,7 +48,7 @@ from doc_harness.produce import ProductionResult, produce, run_qa, triage, write
 from doc_harness.program import load_program
 from doc_harness.registry import Registry
 from doc_harness.report import append_ledger, run_holdout, write_report
-from doc_harness.scaffold_writer import ScaffoldOptions, create_project
+from doc_harness.scaffold_writer import HARNESS_REPO, PIN_MODES, ScaffoldOptions, create_project
 from doc_harness.splits import (
     SUPPORT_OPTIONS,
     below_floor,
@@ -538,6 +538,22 @@ def close(project: Project, labeling_hours: float | None, cost_usd: float | None
 @click.option("--directory", type=click.Path(path_type=Path), default=None, help="Where to create it.")
 @click.option("--harness-version", default=__version__, help="Exact harness version to pin.")
 @click.option("--python-version", default="3.12.11", help="Python version for the project's pyenv virtualenv.")
+@click.option(
+    "--pin-mode",
+    type=click.Choice(PIN_MODES),
+    default="git",
+    help=(
+        "How the project pins the harness. git: a tag in the harness repo. "
+        "pypi: a package index. path: a local checkout."
+    ),
+)
+@click.option("--repo", default=HARNESS_REPO, help="Harness repository, for --pin-mode git.")
+@click.option(
+    "--harness-path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Local harness checkout, for --pin-mode path.",
+)
 @click.option("--force", is_flag=True, help="Write into a directory that already has contents.")
 @click.version_option(__version__, prog_name="newproject")
 def newproject(
@@ -545,6 +561,9 @@ def newproject(
     directory: Path | None,
     harness_version: str,
     python_version: str,
+    pin_mode: str,
+    repo: str,
+    harness_path: Path | None,
     force: bool,
 ) -> None:
     """Create a new doc-harness project pinned to an exact harness version."""
@@ -554,11 +573,14 @@ def newproject(
         harness_version=harness_version,
         python_version=python_version,
         python_requires=".".join(python_version.split(".")[:2]),
+        pin_mode=pin_mode,
+        repo=repo,
+        harness_path=harness_path,
     )
     target = (directory or Path(options.project_slug)).resolve()
     create_project(target, options, force=force)
     click.echo(
-        f"Created {target}, pinned to doc-harness {harness_version}.\n\n"
+        f"Created {target}, pinned to {options.pin}.\n\n"
         "Next:\n"
         f"  cd {target}\n"
         f"  pyenv virtualenv {python_version} {options.project_slug}\n"
