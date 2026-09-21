@@ -4,6 +4,25 @@ Projects pin one exact harness version. Read the entry for a version before movi
 project onto it: some releases change how answers are scored, and a number measured under
 one version is not comparable with a number measured under another.
 
+## Unreleased
+
+**Changes scores** wherever a reply could not be read. Such a reply used to be scored as the
+model abstaining on every task -- credit wherever the gold was null, and no sign anything had
+failed. It is now retried with a fresh generation and, if it still fails, scored as wrong and
+listed. By default a scoring run with any such reply refuses to report numbers.
+
+- **Strict parsing.** DSPy fills an omitted nullable field with null. Since every task is
+  nullable, a reply cut off partway came back with its remaining fields null. The program now
+  parses strictly: an omitted field raises, an explicit null is still an answer. This also
+  closes the gap in production, where a partial reply passed the schema check with nulls.
+- **Evaluation no longer turns an error into nulls.** `dspy.Evaluate` substitutes an empty
+  prediction for a program that raises. Failed replies are now retried, then recorded in
+  `metrics.json` and at the top of `failures.md`, and they survive a `rescore`.
+- New `evaluation` settings in config.yaml: `max_retries` (default 2) and `max_failure_rate`
+  (default 0.0).
+- The holdout lock is now taken after predictions succeed, so a refused run does not spend
+  the one-shot measurement.
+
 ## 0.1.2
 
 **Changes scores.** An upgraded project should re-score its runs (`doc-harness rescore

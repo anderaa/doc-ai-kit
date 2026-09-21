@@ -60,6 +60,13 @@ metric:
   # strip every comment in it
   excluded_classes: {}
 
+evaluation:
+  # a reply that cannot be read is retried with a fresh generation this many times
+  max_retries: 2
+  # share of replies still failing after retries above which a scoring run refuses to report
+  # numbers. A failure is never scored as an abstention; below this it counts as a wrong answer
+  max_failure_rate: 0.0
+
 production:
   max_retries: 3
   batch_size: 32

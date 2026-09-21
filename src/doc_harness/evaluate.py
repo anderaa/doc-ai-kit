@@ -25,7 +25,9 @@ from typing import Any
 from pydantic import BaseModel
 
 from doc_harness import __version__
+from doc_harness.guards import GuardError
 from doc_harness.metric import ExampleScore, Metric, _context_window, get_field
+from doc_harness.program import fresh_generation
 from doc_harness.registry import Registry, TaskType, _BaseTask
 from doc_harness.stats import bootstrap_interval, precision_recall_f1, readable_at, wilson_interval
 
@@ -151,6 +153,8 @@ class EvaluationResult:
     scores: list[ExampleScore]
     metadata: dict[str, Any]
     excluded_classes: dict[str, list[str]] = field(default_factory=dict)
+    # documents whose reply could not be read; each is scored as wrong on every task
+    failures: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def per_task_primary(self) -> dict[str, float]:
@@ -173,6 +177,7 @@ class EvaluationResult:
             "tasks": {task_id: metrics.to_dict() for task_id, metrics in self.tasks.items()},
             "excluded_classes": self.excluded_classes,
             "unmeasurable_tasks": [task_id for task_id, m in self.tasks.items() if not m.measurable],
+            "failures": self.failures,
         }
 
 
@@ -433,6 +438,11 @@ def score_split(
             notes=notes,
         )
 
+    failures = [
+        {"doc_id": get_field(gold, "doc_id"), "error": pred.error, "attempts": pred.attempts}
+        for gold, pred in zip(golds, preds, strict=True)
+        if isinstance(pred, FailedReply)
+    ]
     aggregates = [score.aggregate for score in scores]
     aggregate = sum(aggregates) / len(aggregates) if aggregates else 0.0
     merged_metadata = {
@@ -443,6 +453,7 @@ def score_split(
         "support_floor": support_floor,
         "measurable_floor": measurable_floor,
         "seed": seed,
+        "n_failed_replies": len(failures),
         **dict(metadata or {}),
     }
     # counts must reconcile: every example scored every task, or something was dropped
@@ -458,6 +469,7 @@ def score_split(
         scores=scores,
         metadata=merged_metadata,
         excluded_classes={task_id: sorted(labels) for task_id, labels in metric.excluded_classes.items()},
+        failures=failures,
     )
 
 
@@ -515,6 +527,21 @@ def write_failures(
         "against a full error dump key themselves to individual documents and do not survive the holdout.",
         "",
     ]
+    if result.failures:
+        lines += [
+            f"## Failed replies ({len(result.failures)})",
+            "",
+            "These replies could not be read even after fresh retries. Each is scored as a wrong answer",
+            "on every task, not as an abstention. They are not the model's judgement and say nothing",
+            "about the prompt -- fix the cause, usually models.max_tokens, before reading anything below.",
+            "",
+            "| doc | attempts | error |",
+            "| --- | --- | --- |",
+        ]
+        for failure in result.failures:
+            error = " ".join(str(failure["error"]).split())[:200].replace("|", "\\|")
+            lines.append(f"| {failure['doc_id']} | {failure['attempts']} | {error} |")
+        lines.append("")
     for task in registry:
         metrics = result.tasks[task.id]
         errors = sum(1 for score in result.scores if not score.results[task.id].correct)
@@ -581,12 +608,13 @@ def write_predictions(path: Path, registry: Registry, golds: Sequence[Any], pred
     """
     rows = []
     for gold, pred in zip(golds, preds, strict=True):
-        rows.append(
-            {
-                "doc_id": get_field(gold, "doc_id"),
-                "predicted": {task.id: _jsonable(get_field(pred, task.id)) for task in registry},
-            }
-        )
+        row: dict[str, Any] = {
+            "doc_id": get_field(gold, "doc_id"),
+            "predicted": {task.id: _jsonable(get_field(pred, task.id)) for task in registry},
+        }
+        if isinstance(pred, FailedReply):
+            row["failed"] = {"error": pred.error, "attempts": pred.attempts}
+        rows.append(row)
     path.write_text("\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n", encoding="utf-8")
     logger.info("wrote %s", path)
 
@@ -618,7 +646,11 @@ def load_predictions(path: Path) -> dict[str, dict[str, Any]]:
         if not line.strip():
             continue
         row = json.loads(line)
-        rows[str(row["doc_id"])] = dict(row["predicted"])
+        if "failed" in row:
+            failure = row["failed"]
+            rows[str(row["doc_id"])] = FailedReply(list(row["predicted"]), failure["error"], failure["attempts"])
+        else:
+            rows[str(row["doc_id"])] = dict(row["predicted"])
     return rows
 
 
@@ -644,24 +676,79 @@ def write_run(
         write_predictions(run_dir / "predictions.jsonl", registry, golds, preds)
 
 
+# what a reply that could not be read is scored as, on every task. Chosen so that no
+# normalizer reads it as null and no matcher can match it: it scores as a wrong answer.
+FAILED_REPLY = "<failed reply>"
+
+
+class EvaluationError(GuardError):
+    """Raised when too many replies failed for a scoring run's numbers to mean anything."""
+
+
+class FailedReply(dict[str, Any]):
+    """A document whose reply could not be read, even after fresh retries.
+
+    Every task maps to :data:`FAILED_REPLY`, so the ordinary matchers score it as a wrong
+    answer -- including where the gold is null, which an abstention would have got right.
+    The error travels with it into metrics.json and failures.md.
+    """
+
+    def __init__(self, task_ids: Sequence[str], error: str, attempts: int) -> None:
+        super().__init__({task_id: FAILED_REPLY for task_id in task_ids})
+        self.error = error
+        self.attempts = attempts
+
+
+def _is_failed(prediction: Any) -> bool:
+    """Return whether dspy.Evaluate handed back its empty placeholder for a raised error."""
+    keys = prediction.keys() if hasattr(prediction, "keys") else None
+    return keys is not None and len(list(keys)) == 0
+
+
+def _retry(program: Any, example: Any, task_ids: Sequence[str], max_retries: int) -> Any:
+    """Run one example again, the first time from cache and then with fresh generations.
+
+    The first replay is free -- DSPy caches the reply that failed to parse -- and recovers
+    the error that dspy.Evaluate swallowed. Each later attempt asks the model afresh.
+    """
+    last_error = "the reply could not be read"
+    for attempt in range(1, max_retries + 2):
+        try:
+            with fresh_generation(attempt):
+                return program(**example.inputs())
+        except Exception as exc:  # noqa: BLE001 - recorded on the failure, never swallowed
+            last_error = f"{type(exc).__name__}: {exc}"
+            logger.warning("%s failed on attempt %d: %s", get_field(example, "doc_id"), attempt, last_error)
+    return FailedReply(task_ids, last_error, attempts=max_retries + 1)
+
+
 def run_program(
     program: Any,
     examples: Sequence[Any],
     metric: Metric,
     num_threads: int = 8,
     display_progress: bool = False,
+    max_retries: int = 2,
+    max_failure_rate: float = 0.0,
 ) -> list[Any]:
     """Run a program over a split and return its predictions in example order.
 
-    Wraps ``dspy.Evaluate`` for its threading and error handling, but the scoring that
-    matters happens in :func:`score_split` afterwards, against cached predictions. That
-    separation is what lets a project re-score without paying for inference again.
+    Wraps ``dspy.Evaluate`` for its threading, but not its error handling: on a raised error
+    it substitutes an empty prediction, which reads as a null on every task and would be
+    scored as the model choosing to abstain. Here a failed reply is retried with fresh
+    generations; one that never succeeds becomes a :class:`FailedReply`, scored as wrong and
+    listed by document. Above ``max_failure_rate`` the run refuses to report at all.
+
+    The scoring that matters happens in :func:`score_split` afterwards, against saved
+    predictions, which is what lets a project re-score without paying for inference again.
 
     :param program: The DSPy program to run
     :param examples: The examples to run it over
     :param metric: The metric, passed through to dspy.Evaluate
     :param num_threads: How many examples to run concurrently
     :param display_progress: Whether to show DSPy's progress bar
+    :param max_retries: Fresh attempts for a reply that could not be read
+    :param max_failure_rate: Share of still-failing replies above which the run refuses
     :returns: One prediction per example, in the same order
     """
     import dspy
@@ -673,6 +760,8 @@ def run_program(
         display_progress=display_progress,
         display_table=False,
         provide_traceback=True,
+        # every failure is handed back to be retried and accounted for, never an abort midway
+        max_errors=len(examples) + 1,
     )
     outcome = evaluator(program)
     by_doc: dict[str, Any] = {}
@@ -686,7 +775,29 @@ def run_program(
         raise RuntimeError(f"program returned {len(predictions)} predictions for {len(examples)} examples")
     if len(by_doc) == len(examples):
         # reorder by doc_id, because a threaded run does not guarantee input order
-        return [by_doc[str(get_field(example, "doc_id"))] for example in examples]
+        predictions = [by_doc[str(get_field(example, "doc_id"))] for example in examples]
+
+    task_ids = metric.registry.ids
+    for index, (example, prediction) in enumerate(zip(examples, predictions, strict=True)):
+        if _is_failed(prediction):
+            predictions[index] = _retry(program, example, task_ids, max_retries)
+
+    failed = [
+        (get_field(example, "doc_id"), prediction)
+        for example, prediction in zip(examples, predictions, strict=True)
+        if isinstance(prediction, FailedReply)
+    ]
+    if failed:
+        rate = len(failed) / len(examples)
+        listing = "; ".join(f"{doc_id}: {reply.error.splitlines()[0][:160]}" for doc_id, reply in failed)
+        if rate > max_failure_rate:
+            raise EvaluationError(
+                f"{len(failed)} of {len(examples)} replies ({rate:.0%}) could not be read after "
+                f"{max_retries} fresh retries, above evaluation.max_failure_rate of {max_failure_rate:.0%}. "
+                "Numbers from this run would describe the failures as much as the program, so none are "
+                f"reported. Usually this is truncation: check models.max_tokens. Failed: {listing}"
+            )
+        logger.warning("%d reply(ies) failed and are scored as wrong answers: %s", len(failed), listing)
     return predictions
 
 

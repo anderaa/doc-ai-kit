@@ -103,7 +103,14 @@ def _evaluate(
     note: str = "",
 ) -> BaselineRun:
     """Run one baseline over the validation split and write its run directory."""
-    predictions = run_program(program, examples, metric, num_threads=config.optimization.num_threads)
+    predictions = run_program(
+        program,
+        examples,
+        metric,
+        num_threads=config.optimization.num_threads,
+        max_retries=config.evaluation.max_retries,
+        max_failure_rate=config.evaluation.max_failure_rate,
+    )
     result = score_split(
         registry,
         metric,

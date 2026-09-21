@@ -142,6 +142,20 @@ class MetricConfig(_Strict):
     excluded_classes: dict[str, list[str]] = Field(default_factory=dict)
 
 
+class EvaluationConfig(_Strict):
+    """How a scoring run treats a reply it could not read.
+
+    A failed reply is retried with a fresh generation. One that still fails is scored as a
+    wrong answer on every task -- never as an abstention, which would earn credit wherever
+    the gold is null -- and is listed by document. Above ``max_failure_rate`` the run
+    refuses to report numbers at all, because they would describe the failures as much as
+    the program. The default of zero means any reply that survives every retry stops it.
+    """
+
+    max_retries: int = Field(default=2, ge=0)
+    max_failure_rate: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
 class ProductionConfig(_Strict):
     """How the full-corpus run behaves."""
 
@@ -166,6 +180,7 @@ class Config(_Strict):
     splits: SplitConfig = SplitConfig()
     optimization: OptimizationConfig = OptimizationConfig()
     metric: MetricConfig = MetricConfig()
+    evaluation: EvaluationConfig = EvaluationConfig()
     production: ProductionConfig = ProductionConfig()
     budget: BudgetConfig = BudgetConfig()
     source: Path | None = None

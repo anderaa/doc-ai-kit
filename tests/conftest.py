@@ -83,3 +83,49 @@ def load_example(name: str) -> ModuleType:
     sys.modules[module_name] = module
     spec.loader.exec_module(module)
     return module
+
+
+@pytest.fixture
+def isolated_cache(tmp_path: Path) -> Iterator[None]:
+    """Give DSPy a private cache, so these tests neither read nor pollute ~/.dspy_cache."""
+    import dspy
+
+    dspy.configure_cache(enable_disk_cache=True, enable_memory_cache=True, disk_cache_dir=str(tmp_path / "cache"))
+    try:
+        yield
+    finally:
+        dspy.configure_cache()
+
+
+class StubProvider:
+    """Stands in for the model provider: truncates the first ``bad`` calls, answers properly after.
+
+    It sits behind DSPy's real cache, which is the point -- the bug lived in the cache.
+    """
+
+    def __init__(self, bad: int) -> None:
+        self.bad = bad
+        self.calls = 0
+
+    def __call__(self, **kwargs: Any) -> Any:
+        import litellm
+
+        self.calls += 1
+        if self.calls <= self.bad:
+            content, finish = "[[ ## flag ## ]]\ntr", "length"
+        else:
+            content = (
+                "[[ ## flag ## ]]\ntrue\n\n[[ ## state ## ]]\nCA\n\n" "[[ ## number ## ]]\nA-1\n\n[[ ## completed ## ]]"
+            )
+            finish = "stop"
+        return litellm.ModelResponse(
+            model="claude-sonnet-5",
+            choices=[{"index": 0, "message": {"role": "assistant", "content": content}, "finish_reason": finish}],
+            usage={"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20},
+        )
+
+
+def real_lm() -> Any:
+    import dspy
+
+    return dspy.LM("anthropic/claude-sonnet-5", temperature=1.0, max_tokens=64, num_retries=0)

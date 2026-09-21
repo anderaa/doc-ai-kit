@@ -5,6 +5,15 @@ description: How to read failures.md and metrics.json without drawing the wrong 
 
 # Reading failures.md
 
+## Read "Failed replies" first, if it is there
+
+A reply that could not be read -- usually truncated at `models.max_tokens` -- is retried with
+a fresh generation, and one that never succeeds is listed at the top of `failures.md`. It is
+scored as a wrong answer on every task, never as an abstention, so it cannot earn credit where
+the gold is null. But it is not the model's judgement and says nothing about the prompt: fix
+the cause before reading anything below it. By default any such reply stops the run outright
+(`evaluation.max_failure_rate: 0.0`), so seeing the section means someone raised that on purpose.
+
 ## Read the per-task vector before the aggregate
 
 Every run records the per-task primary metric alongside the scalar. A rising aggregate that

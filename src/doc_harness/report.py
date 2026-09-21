@@ -243,9 +243,18 @@ def run_holdout(
     :returns: The holdout report
     """
     holdout_dir = project_dir / "runs" / "holdout"
+    # predictions come before the lock: if too many replies fail, the run refuses before any
+    # number exists, and a refusal must not spend the one-shot measurement. Nothing is scored
+    # or written until the lock is held, so no holdout number can be seen without taking it.
+    predictions = run_program(
+        program,
+        holdout_examples,
+        metric,
+        num_threads=config.optimization.num_threads,
+        max_retries=config.evaluation.max_retries,
+        max_failure_rate=config.evaluation.max_failure_rate,
+    )
     lock = open_holdout(holdout_dir, opened_by=opened_by, override=override, reason=reason)
-
-    predictions = run_program(program, holdout_examples, metric, num_threads=config.optimization.num_threads)
     result = score_split(
         registry,
         metric,

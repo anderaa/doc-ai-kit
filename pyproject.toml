@@ -63,7 +63,7 @@ warn_unreachable = true
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["dspy.*", "pymupdf", "pdfplumber.*", "pytesseract.*", "pdf2image.*"]
+module = ["dspy.*", "json_repair.*", "regex.*", "pymupdf", "pdfplumber.*", "pytesseract.*", "pdf2image.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

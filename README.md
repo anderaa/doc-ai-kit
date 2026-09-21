@@ -53,6 +53,10 @@ failure is silent -- the numbers keep going up while the measurement stops meani
   hides a collapsing task is common and expensive.
 - **Abstention is scored.** Null against null gold is a true negative; a wrong non-null value
   is both a false positive and a false negative.
+- **A reply that cannot be read is a failure, never an abstention.** DSPy fills an omitted
+  nullable field with null, which would score a truncated reply as a model declining to
+  answer. The harness parses strictly, retries with a fresh generation, and by default
+  refuses to report numbers if a reply still fails.
 - **`failures.md` samples at most three errors per task.** Given the full dump, an optimizer
   writes rules keyed to individual documents that die on the holdout.
 - **Every class gets a demonstration.** Bootstrapped selection otherwise drops rare classes

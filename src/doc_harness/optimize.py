@@ -393,7 +393,14 @@ def run_experiment(
             valset,
             num_trials=config.optimization.num_trials,
         )
-        predictions = run_program(compiled, valset, metric, num_threads=config.optimization.num_threads)
+        predictions = run_program(
+            compiled,
+            valset,
+            metric,
+            num_threads=config.optimization.num_threads,
+            max_retries=config.evaluation.max_retries,
+            max_failure_rate=config.evaluation.max_failure_rate,
+        )
     wall_seconds = time.monotonic() - started
 
     result = score_split(

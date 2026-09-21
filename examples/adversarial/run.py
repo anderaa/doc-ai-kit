@@ -40,7 +40,14 @@ def main() -> None:
     metric = project.metric()
 
     program = build_program(project.registry, module_type=project.config.optimization.module)
-    predictions = run_program(program, examples, metric, num_threads=project.config.optimization.num_threads)
+    predictions = run_program(
+        program,
+        examples,
+        metric,
+        num_threads=project.config.optimization.num_threads,
+        max_retries=project.config.evaluation.max_retries,
+        max_failure_rate=project.config.evaluation.max_failure_rate,
+    )
     result = score_split(
         project.registry,
         metric,

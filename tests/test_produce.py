@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import json
 import threading
-from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 import pytest
-from conftest import document_for, scripted_lm
+from conftest import StubProvider, document_for, real_lm, scripted_lm
 
 from doc_harness.config import Config
 from doc_harness.produce import (
@@ -286,52 +285,6 @@ def test_failure_errors_stay_on_one_table_row(tmp_path: Path, toy_registry: Regi
     assert "LM Response: {'text': None}" in rows[0]
 
 
-@pytest.fixture
-def isolated_cache(tmp_path: Path) -> Iterator[None]:
-    """Give DSPy a private cache, so these tests neither read nor pollute ~/.dspy_cache."""
-    import dspy
-
-    dspy.configure_cache(enable_disk_cache=True, enable_memory_cache=True, disk_cache_dir=str(tmp_path / "cache"))
-    try:
-        yield
-    finally:
-        dspy.configure_cache()
-
-
-class StubProvider:
-    """Stands in for the provider: truncates the first ``bad`` calls, answers properly after.
-
-    It sits behind DSPy's real cache, which is the point -- the bug lived in the cache.
-    """
-
-    def __init__(self, bad: int) -> None:
-        self.bad = bad
-        self.calls = 0
-
-    def __call__(self, **kwargs: Any) -> Any:
-        import litellm
-
-        self.calls += 1
-        if self.calls <= self.bad:
-            content, finish = "[[ ## flag ## ]]\ntr", "length"
-        else:
-            content = (
-                "[[ ## flag ## ]]\ntrue\n\n[[ ## state ## ]]\nCA\n\n" "[[ ## number ## ]]\nA-1\n\n[[ ## completed ## ]]"
-            )
-            finish = "stop"
-        return litellm.ModelResponse(
-            model="claude-sonnet-5",
-            choices=[{"index": 0, "message": {"role": "assistant", "content": content}, "finish_reason": finish}],
-            usage={"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20},
-        )
-
-
-def _real_lm() -> Any:
-    import dspy
-
-    return dspy.LM("anthropic/claude-sonnet-5", temperature=1.0, max_tokens=64, num_retries=0)
-
-
 def test_a_plain_retry_replays_the_cached_truncation(
     toy_registry: Registry, isolated_cache: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -342,7 +295,7 @@ def test_a_plain_retry_replays_the_cached_truncation(
     stub = StubProvider(bad=10_000)
     monkeypatch.setattr(litellm, "completion", stub)
     program = build_program(toy_registry)
-    with dspy.context(lm=_real_lm()):
+    with dspy.context(lm=real_lm()):
         with pytest.raises(Exception):  # noqa: B017 - any parse failure will do
             program(document=document_for("p00"))
         calls_after_first = stub.calls
@@ -362,14 +315,14 @@ def test_a_retry_draws_a_fresh_answer_past_the_cache(
     # measure how many calls one failing attempt makes (the adapter may fall back and retry itself)
     probe = StubProvider(bad=10_000)
     monkeypatch.setattr(litellm, "completion", probe)
-    with dspy.context(lm=_real_lm()), pytest.raises(Exception):  # noqa: B017
+    with dspy.context(lm=real_lm()), pytest.raises(Exception):  # noqa: B017
         build_program(toy_registry)(document=document_for("probe"))
     first_attempt_calls = probe.calls
     dspy.configure_cache(enable_disk_cache=True, enable_memory_cache=True, disk_cache_dir=str(tmp_path / "c2"))
 
     stub = StubProvider(bad=first_attempt_calls)
     monkeypatch.setattr(litellm, "completion", stub)
-    with dspy.context(lm=_real_lm()):
+    with dspy.context(lm=real_lm()):
         outcomes = produce(
             toy_registry,
             _config(production={"max_retries": 2, "num_threads": 1}),
@@ -397,7 +350,7 @@ def test_each_retry_uses_its_own_rollout(tmp_path: Path, toy_registry: Registry,
                 seen.setdefault(kwargs["document"], []).append(rollout)
             raise RuntimeError("truncated")
 
-    with dspy.context(lm=_real_lm()):
+    with dspy.context(lm=real_lm()):
         produce(toy_registry, _config(production={"max_retries": 2, "num_threads": 4}), AlwaysFails(), texts, tmp_path)
     assert len(seen) == CORPUS
     # the first attempt shares the cache; each retry gets its own key, in every worker thread

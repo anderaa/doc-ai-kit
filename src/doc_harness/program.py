@@ -12,10 +12,12 @@ help on extraction.
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+from doc_harness.adapters import strict_version_of
 from doc_harness.config import OptimizationConfig
 from doc_harness.registry import Registry
 
@@ -75,14 +77,19 @@ def build_program(
                 setattr(self, _attribute_for(group), predictor)
 
         def forward(self, **kwargs: Any) -> Any:
-            """Run every group's predictor and merge their outputs into one prediction."""
+            """Run every group's predictor and merge their outputs into one prediction.
+
+            Parsing is strict wherever the program runs: a reply that omits a field raises
+            rather than coming back null, so a failure is never scored as an abstention.
+            """
             document = kwargs[INPUT_FIELD]
             merged: dict[str, Any] = {}
-            for group, task_ids in self.group_tasks.items():
-                predictor = getattr(self, _attribute_for(group))
-                prediction = predictor(**{INPUT_FIELD: document})
-                for task_id in task_ids:
-                    merged[task_id] = getattr(prediction, task_id, None)
+            with dspy.context(adapter=strict_version_of(dspy.settings.adapter)):
+                for group, task_ids in self.group_tasks.items():
+                    predictor = getattr(self, _attribute_for(group))
+                    prediction = predictor(**{INPUT_FIELD: document})
+                    for task_id in task_ids:
+                        merged[task_id] = getattr(prediction, task_id, None)
             return dspy.Prediction(**merged)
 
     program = DocumentProgram()
@@ -141,3 +148,29 @@ def instructions_of(program: Any) -> dict[str, str]:
         if signature is not None:
             found[name] = signature.instructions
     return found
+
+
+@contextmanager
+def fresh_generation(attempt: int) -> Iterator[None]:
+    """Make a retry ask the model again instead of replaying the cached answer.
+
+    DSPy caches every response, a truncated or unparseable one included, keyed on the
+    request. A plain retry sends an identical request, gets the same cached failure back,
+    and fails the same way however many times it is tried -- retries only ever helped with
+    errors that never reached the cache. A distinct ``rollout_id`` per attempt gives each
+    retry its own cache key, so it draws a new sample; DSPy strips the id before the request
+    reaches the provider. The first attempt keeps the shared cache, which is free and correct
+    when the document has been answered before.
+
+    At temperature 0 DSPy leaves the cache in place even with a rollout id, but a fresh call
+    would return the same answer anyway; there the fix for truncation is a larger
+    ``models.max_tokens``.
+    """
+    import dspy
+
+    lm = dspy.settings.lm
+    if attempt == 1 or lm is None:
+        yield
+        return
+    with dspy.context(lm=lm.copy(rollout_id=attempt)):
+        yield
