@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import threading
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -283,3 +284,121 @@ def test_failure_errors_stay_on_one_table_row(tmp_path: Path, toy_registry: Regi
     assert len(rows) == 1
     assert rows[0].endswith("|")
     assert "LM Response: {'text': None}" in rows[0]
+
+
+@pytest.fixture
+def isolated_cache(tmp_path: Path) -> Iterator[None]:
+    """Give DSPy a private cache, so these tests neither read nor pollute ~/.dspy_cache."""
+    import dspy
+
+    dspy.configure_cache(enable_disk_cache=True, enable_memory_cache=True, disk_cache_dir=str(tmp_path / "cache"))
+    try:
+        yield
+    finally:
+        dspy.configure_cache()
+
+
+class StubProvider:
+    """Stands in for the provider: truncates the first ``bad`` calls, answers properly after.
+
+    It sits behind DSPy's real cache, which is the point -- the bug lived in the cache.
+    """
+
+    def __init__(self, bad: int) -> None:
+        self.bad = bad
+        self.calls = 0
+
+    def __call__(self, **kwargs: Any) -> Any:
+        import litellm
+
+        self.calls += 1
+        if self.calls <= self.bad:
+            content, finish = "[[ ## flag ## ]]\ntr", "length"
+        else:
+            content = (
+                "[[ ## flag ## ]]\ntrue\n\n[[ ## state ## ]]\nCA\n\n" "[[ ## number ## ]]\nA-1\n\n[[ ## completed ## ]]"
+            )
+            finish = "stop"
+        return litellm.ModelResponse(
+            model="claude-sonnet-5",
+            choices=[{"index": 0, "message": {"role": "assistant", "content": content}, "finish_reason": finish}],
+            usage={"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20},
+        )
+
+
+def _real_lm() -> Any:
+    import dspy
+
+    return dspy.LM("anthropic/claude-sonnet-5", temperature=1.0, max_tokens=64, num_retries=0)
+
+
+def test_a_plain_retry_replays_the_cached_truncation(
+    toy_registry: Registry, isolated_cache: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The bug, reproduced: an identical retry is answered from the cache, never the model."""
+    import dspy
+    import litellm
+
+    stub = StubProvider(bad=10_000)
+    monkeypatch.setattr(litellm, "completion", stub)
+    program = build_program(toy_registry)
+    with dspy.context(lm=_real_lm()):
+        with pytest.raises(Exception):  # noqa: B017 - any parse failure will do
+            program(document=document_for("p00"))
+        calls_after_first = stub.calls
+        with pytest.raises(Exception):  # noqa: B017
+            program(document=document_for("p00"))
+    assert calls_after_first > 0
+    assert stub.calls == calls_after_first, "the second identical call should never have reached the provider"
+
+
+def test_a_retry_draws_a_fresh_answer_past_the_cache(
+    tmp_path: Path, toy_registry: Registry, isolated_cache: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The fix: the retry reaches the provider, gets a complete answer, and the document succeeds."""
+    import dspy
+    import litellm
+
+    # measure how many calls one failing attempt makes (the adapter may fall back and retry itself)
+    probe = StubProvider(bad=10_000)
+    monkeypatch.setattr(litellm, "completion", probe)
+    with dspy.context(lm=_real_lm()), pytest.raises(Exception):  # noqa: B017
+        build_program(toy_registry)(document=document_for("probe"))
+    first_attempt_calls = probe.calls
+    dspy.configure_cache(enable_disk_cache=True, enable_memory_cache=True, disk_cache_dir=str(tmp_path / "c2"))
+
+    stub = StubProvider(bad=first_attempt_calls)
+    monkeypatch.setattr(litellm, "completion", stub)
+    with dspy.context(lm=_real_lm()):
+        outcomes = produce(
+            toy_registry,
+            _config(production={"max_retries": 2, "num_threads": 1}),
+            build_program(toy_registry),
+            {"p00": document_for("p00")},
+            tmp_path,
+        )
+    assert outcomes[0].ok, outcomes[0].error
+    assert outcomes[0].attempts == 2
+    assert outcomes[0].values["state"] == "CA"
+    assert stub.calls > first_attempt_calls, "the retry never reached the provider"
+
+
+def test_each_retry_uses_its_own_rollout(tmp_path: Path, toy_registry: Registry, texts: dict[str, str]) -> None:
+    """Every attempt after the first carries a distinct rollout id, so a distinct cache key."""
+    import dspy
+
+    seen: dict[str, list[Any]] = {}
+    lock = threading.Lock()
+
+    class AlwaysFails:
+        def __call__(self, **kwargs: Any) -> Any:
+            rollout = dspy.settings.lm.kwargs.get("rollout_id")
+            with lock:
+                seen.setdefault(kwargs["document"], []).append(rollout)
+            raise RuntimeError("truncated")
+
+    with dspy.context(lm=_real_lm()):
+        produce(toy_registry, _config(production={"max_retries": 2, "num_threads": 4}), AlwaysFails(), texts, tmp_path)
+    assert len(seen) == CORPUS
+    # the first attempt shares the cache; each retry gets its own key, in every worker thread
+    assert all(rollouts == [None, 2, 3] for rollouts in seen.values()), seen

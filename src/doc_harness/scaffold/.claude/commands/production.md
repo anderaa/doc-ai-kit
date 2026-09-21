@@ -42,9 +42,10 @@ distribution and null rates in particular usually mean the corpus differs from t
 sample in a way nobody noticed -- which is worth knowing before the numbers are quoted.
 
 **Schema failures are usually truncation.** When a response runs past `models.max_tokens`
-it arrives incomplete and cannot be parsed, so the document is retried and then recorded as
-a failure. Check the log for "truncated due to exceeding max_tokens" before assuming the
-model got the answer wrong. Raising `max_tokens` is the fix -- but it is a change to the
+it arrives incomplete and cannot be parsed. Each retry asks the model afresh rather than
+replaying the cached reply, so a one-off rambling answer recovers on its own; a document
+that truncates on every attempt is recorded as a failure. Check the log for "truncated due
+to exceeding max_tokens" before assuming the model got the answer wrong. Raising `max_tokens` is the fix -- but it is a change to the
 model configuration, so the honest thing is to re-run the affected documents rather than
 mixing two configurations in one output file. `doc-harness production` resumes from the
 checkpoints, so only the failed documents are re-run.

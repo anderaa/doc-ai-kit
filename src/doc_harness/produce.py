@@ -22,8 +22,9 @@ import csv
 import json
 import logging
 import random
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -139,12 +140,39 @@ def _write_checkpoint(raw_dir: Path, outcome: DocumentOutcome) -> None:
     )
 
 
+@contextmanager
+def _fresh_generation(attempt: int) -> Iterator[None]:
+    """Make a retry ask the model again instead of replaying the cached answer.
+
+    DSPy caches every response, a truncated or unparseable one included, keyed on the
+    request. A plain retry sends an identical request, gets the same cached failure back,
+    and fails the same way however many times it is tried -- retries only ever helped with
+    errors that never reached the cache. A distinct ``rollout_id`` per attempt gives each
+    retry its own cache key, so it draws a new sample; DSPy strips the id before the request
+    reaches the provider. The first attempt keeps the shared cache, which is free and correct
+    when the document has been answered before.
+
+    At temperature 0 DSPy leaves the cache in place even with a rollout id, but a fresh call
+    would return the same answer anyway; there the fix for truncation is a larger
+    ``models.max_tokens``.
+    """
+    import dspy
+
+    lm = dspy.settings.lm
+    if attempt == 1 or lm is None:
+        yield
+        return
+    with dspy.context(lm=lm.copy(rollout_id=attempt)):
+        yield
+
+
 def _run_one(program: Any, registry: Registry, doc_id: str, text: str, max_retries: int) -> DocumentOutcome:
-    """Run one document, retrying before giving up and recording the failure."""
+    """Run one document, retrying with a fresh generation before recording the failure."""
     last_error = ""
     for attempt in range(1, max_retries + 2):
         try:
-            prediction = program(document=text)
+            with _fresh_generation(attempt):
+                prediction = program(document=text)
             values = {task.id: get_field(prediction, task.id) for task in registry}
             return DocumentOutcome(doc_id=doc_id, values=values, attempts=attempt)
         except Exception as exc:  # noqa: BLE001 - the failure is recorded, never swallowed
