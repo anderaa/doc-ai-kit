@@ -4,9 +4,29 @@ Projects pin one exact harness version. Read the entry for a version before movi
 project onto it: some releases change how answers are scored, and a number measured under
 one version is not comparable with a number measured under another.
 
-## Unreleased
+## 0.1.4
 
-**Changes scores** on span tasks, and changes what the model is asked for.
+**Changes scores and the prompt** for span tasks, changes the format of `outputs.jsonl`, and
+fixes a scoring bug on numeric tasks.
+
+Upgrading a project:
+
+- **Span tasks: reword, recompile, re-run.** Reword each span question to name the passage
+  ("The governing-law clause"), not to ask for offsets -- the harness now appends how to
+  answer. Recompile any program with a span task, since it carries demonstrations in the old
+  format. The prompt changed, so `rescore` cannot update span numbers: re-run.
+- **Numeric tasks: rescore.** The magnitude fix below changes scoring only, so `rescore`
+  updates runs saved under 0.1.3 at no cost.
+- **Production: do not resume a 0.1.3 run.** Its checkpoints hold numbers, dates and spans as
+  text; resumed under 0.1.4 that text would be read back as values. Use `production
+  --no-resume`. Anything consuming `outputs.jsonl` now receives those values as structured
+  JSON instead of text.
+- **Programs compiled with MIPROv2** under 0.1.3 were compiled against a task model without
+  the configured temperature or `max_tokens`. Recompile to compile under the project's settings.
+- config.yaml needs no change: the new thinking settings are optional.
+- Record the upgrade in `decisions.md`.
+
+Changes:
 
 - **Spans are asked for as quotes.** A model asked for character offsets has to count
   characters. On the adversarial corpus it found the right sentence and placed it 84
@@ -16,10 +36,6 @@ one version is not comparable with a number measured under another.
   adversarial corpus went from 0.950 to 1.000.
 - Gold spans are shown to the model as the passage they cover, so a labeled demonstration
   matches the instruction instead of showing offsets it is told never to give.
-- Upgrading a project: reword span questions to name the passage ("The governing-law clause"),
-  not to ask for offsets -- the harness now appends how to answer. **Recompile** any program
-  with a span task: one compiled under 0.1.3 carries demonstrations in the old format.
-
 - **Thinking is now configurable.** `models.task_effort` (low to max) and `models.task_thinking`
   (adaptive or disabled) control how hard the task model thinks. Both are unset by default, so
   nothing changes until a project chooses. Every truncated reply in the harness's own runs was
