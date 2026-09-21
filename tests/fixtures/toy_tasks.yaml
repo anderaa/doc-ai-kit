@@ -1,0 +1,17 @@
+# three tasks over ten examples, small enough that every number in metrics.json can be
+# computed by hand and asserted exactly
+tasks:
+  - id: flag
+    type: binary
+    question: Whether the document is flagged.
+
+  - id: state
+    type: multiclass
+    question: Which state governs.
+    output:
+      enum: [CA, NY, TX]
+      nullable: true
+
+  - id: number
+    type: extract_exact
+    question: The contract number.

@@ -1,0 +1,112 @@
+# adversarial near-misses, one block per normalizer
+#
+# `cases` assert the canonical form of a single value. `equivalent` asserts that a group of
+# surface forms all canonicalize to the same thing -- that is where the real bugs live,
+# because a normalizer that is merely self-consistent still fails a project.
+
+free_string:
+  params: {}
+  cases:
+    - {input: "  Acme   Holdings ", expect: "acme holdings"}
+    # typographic quotes fold to straight ones; a wrapping pair is then stripped
+    - {input: "say “hi” now", expect: 'say "hi" now'}
+    - {input: "“quoted”", expect: "quoted"}
+    - {input: "en–dash", expect: "en-dash"}
+    - {input: "N/A", expect: null}
+    - {input: "not specified", expect: null}
+    - {input: null, expect: null}
+    # models routinely return an extracted string already quoted
+    - {input: '"MSA-2024-1014"', expect: "msa-2024-1014"}
+    - {input: "'quoted'", expect: "quoted"}
+    # an unmatched or interior quote is part of the value, not a wrapper
+    - {input: '"unbalanced', expect: '"unbalanced'}
+    - {input: 'he said "hi"', expect: 'he said "hi"'}
+  equivalent:
+    - ["Acme  Holdings", "ACME HOLDINGS", " acme holdings "]
+    - ['"MSA-2024-1014"', "MSA-2024-1014", " msa-2024-1014 "]
+    - ["café", "café"]
+
+boolean:
+  params: {}
+  cases:
+    - {input: "Yes", expect: true}
+    - {input: "n", expect: false}
+    - {input: true, expect: true}
+    - {input: "1", expect: true}
+    - {input: "not stated", expect: null}
+    # an uninterpretable answer is a wrong answer, never an abstention
+    - {input: "probably", expect: "probably"}
+
+enum:
+  params:
+    enum: [AL, CA, NY, TX]
+    synonyms: {California: CA, "New York": NY}
+  cases:
+    - {input: "CA", expect: "CA"}
+    - {input: "ca", expect: "CA"}
+    - {input: "California", expect: "CA"}
+    - {input: "  new york ", expect: "NY"}
+    - {input: "N.Y.", expect: "NY"}
+    - {input: "n-y", expect: "NY"}
+    - {input: null, expect: null}
+    - {input: "N/A", expect: null}
+    # a value outside the enum stays unmapped so it can never equal a member
+    - {input: "Ontario", expect: "ontario"}
+
+entity_name:
+  params: {}
+  cases:
+    - {input: "The Acme Corporation, Inc.", expect: "acme"}
+    - {input: "Acme Holdings LLC", expect: "acme holdings"}
+    - {input: "Smith & Wesson", expect: "smith and wesson"}
+    - {input: "Jones-Baker Ltd.", expect: "jones baker"}
+    - {input: "not applicable", expect: null}
+  equivalent:
+    - ["Acme, Inc.", "ACME INC", "Acme Incorporated", "The Acme Inc"]
+    - ["Global Widgets Co.", "Global Widgets Company", "global widgets"]
+  distinct:
+    # collapsing suffixes must not collapse genuinely different companies
+    - ["acme industries", "acme holdings"]
+    - ["cisco", "sysco"]
+
+numeric:
+  params: {}
+  cases:
+    - {input: "$1,234.56", expect: {value: 1234.56, unit: USD}}
+    - {input: "1.2M", expect: {value: 1200000.0, unit: null}}
+    - {input: "$1.2 million", expect: {value: 1200000.0, unit: USD}}
+    - {input: "(1,234)", expect: {value: -1234.0, unit: null}}
+    - {input: "12%", expect: {value: 12.0, unit: percent}}
+    - {input: 1500, expect: {value: 1500.0, unit: null}}
+    - {input: "€2,000", expect: {value: 2000.0, unit: EUR}}
+    - {input: "n/a", expect: null}
+    - {input: "several", expect: "several"}
+  equivalent:
+    - ["$1,200,000", "$1.2M", "$1.2 million"]
+
+date:
+  params: {}
+  cases:
+    - {input: "2024", expect: {value: "2024", granularity: year}}
+    - {input: "2024-06", expect: {value: "2024-06", granularity: month}}
+    - {input: "June 2024", expect: {value: "2024-06", granularity: month}}
+    - {input: "Jun. 2024", expect: {value: "2024-06", granularity: month}}
+    - {input: "2024-06-15", expect: {value: "2024-06-15", granularity: day}}
+    - {input: "June 15, 2024", expect: {value: "2024-06-15", granularity: day}}
+    - {input: "6/15/2024", expect: {value: "2024-06-15", granularity: day}}
+    - {input: "not stated", expect: null}
+    - {input: "sometime last spring", expect: "sometime last spring"}
+  equivalent:
+    - ["2024-06-15", "June 15, 2024", "15 June 2024", "6/15/2024"]
+  distinct:
+    # granularity is a substantive difference, not a formatting one
+    - ["2024", "2024-06"]
+    - ["2024-06", "2024-06-15"]
+
+span:
+  params: {}
+  cases:
+    - {input: {start: 10, end: 20}, expect: {start: 10, end: 20}}
+    - {input: [10, 20], expect: {start: 10, end: 20}}
+    - {input: {start: 20, end: 10}, expect: null}
+    - {input: null, expect: null}

@@ -1,0 +1,13 @@
+# gold and predicted values for the toy split; see tests/test_evaluate.py for the
+# hand-computed metrics these must produce
+examples:
+  - {doc_id: d01, gold: {flag: true,  state: CA,   number: A-1},  pred: {flag: true,  state: CA,   number: A-1}}
+  - {doc_id: d02, gold: {flag: true,  state: CA,   number: A-2},  pred: {flag: true,  state: CA,   number: A-2}}
+  - {doc_id: d03, gold: {flag: true,  state: CA,   number: A-3},  pred: {flag: false, state: NY,   number: A-3}}
+  - {doc_id: d04, gold: {flag: false, state: NY,   number: A-4},  pred: {flag: false, state: NY,   number: null}}
+  - {doc_id: d05, gold: {flag: false, state: NY,   number: null}, pred: {flag: false, state: NY,   number: null}}
+  - {doc_id: d06, gold: {flag: false, state: NY,   number: null}, pred: {flag: true,  state: CA,   number: B-9}}
+  - {doc_id: d07, gold: {flag: true,  state: TX,   number: A-7},  pred: {flag: true,  state: TX,   number: A-7}}
+  - {doc_id: d08, gold: {flag: false, state: TX,   number: A-8},  pred: {flag: false, state: NY,   number: A-9}}
+  - {doc_id: d09, gold: {flag: true,  state: null, number: A-9},  pred: {flag: true,  state: null, number: A-9}}
+  - {doc_id: d10, gold: {flag: false, state: null, number: A-10}, pred: {flag: false, state: CA,   number: A-10}}

@@ -1,0 +1,71 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "doc-harness"
+version = "0.1.0"
+description = "A fixed harness for running document classification and extraction projects with DSPy"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Proprietary" }
+authors = [{ name = "Aaron Anderson" }]
+dependencies = [
+    "dspy[optuna]==3.3.1",
+    "pydantic>=2.7",
+    "pyyaml>=6.0",
+    "click>=8.1",
+    "numpy>=1.26",
+    "rapidfuzz>=3.9",
+    "python-dateutil>=2.9",
+    "pymupdf>=1.24",
+    "pdfplumber>=0.11",
+]
+
+[project.optional-dependencies]
+ocr = ["pytesseract>=0.3.10", "pdf2image>=1.17"]
+dev = [
+    "pytest>=8.2",
+    "ruff>=0.5",
+    "black>=24.4",
+    "mypy>=1.10",
+    "pip-tools>=7.4",
+    "reportlab>=4.2",
+    "types-PyYAML",
+    "types-python-dateutil",
+]
+
+[project.scripts]
+newproject = "doc_harness.cli:newproject"
+doc-harness = "doc_harness.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/doc_harness"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/doc_harness/scaffold" = "doc_harness/scaffold"
+
+[tool.black]
+line-length = 120
+target-version = ["py312"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["dspy.*", "pymupdf", "pdfplumber.*", "pytesseract.*", "pdf2image.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

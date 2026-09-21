@@ -1,0 +1,34 @@
+# {{PROJECT_NAME}}
+
+A doc-harness project, pinned to doc-harness {{HARNESS_VERSION}}.
+
+## Setup
+
+```
+pyenv virtualenv {{PYTHON_VERSION}} {{PROJECT_SLUG}}
+pyenv local {{PROJECT_SLUG}}
+pip install pip-tools
+make lock
+make sync
+```
+
+## Where to start
+
+```
+doc-harness status
+```
+
+Then read `docs/protocol.md` once, and `CLAUDE.md` for the invariants.
+
+## Layout
+
+```
+tasks.yaml          the tasks, and the source of truth for everything generated
+config.yaml         models, budgets, split seed, thresholds, truncation policy
+custom/             project-specific normalizers, matchers, extractors
+decisions.md        human decisions, recorded as they are made
+data/               gitignored: pdfs, cached text, labels, splits
+programs/           baseline inputs and compiled programs
+runs/               one directory per scoring run, plus the leaderboard
+REPORT.md           written at close
+```

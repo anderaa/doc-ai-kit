@@ -1,0 +1,56 @@
+# every task type the harness supports, used to prove the registry covers the matrix
+tasks:
+  - id: has_arbitration_clause
+    type: binary
+    question: Whether the agreement contains a binding arbitration clause.
+    weight: 1.0
+
+  - id: filing_state
+    type: multiclass
+    question: >
+      The US state whose law governs this agreement. Use the governing-law clause, not the
+      mailing address. Null if no US state is named.
+    output:
+      enum: [AL, AK, AZ, CA, DE, NY, TX]
+      nullable: true
+      synonyms:
+        California: CA
+        "New York": NY
+    match: {matcher: identity, normalizer: enum}
+    weight: 2.0
+
+  - id: covered_products
+    type: multilabel
+    question: Which product lines the agreement covers.
+    output:
+      enum: [hardware, software, services, support]
+
+  - id: contract_number
+    type: extract_exact
+    question: The contract number printed on the cover page.
+
+  - id: counterparty
+    type: extract_fuzzy
+    question: Legal name of the counterparty, excluding the filer and outside counsel.
+    match: {matcher: entity_name, theta: 0.90}
+
+  - id: signatories
+    type: extract_list
+    question: Every person who signed the agreement.
+    match: {matcher: list, pair_matcher: entity_name, theta: 0.85}
+
+  - id: contract_value
+    type: extract_numeric
+    question: The total contract value.
+    match: {matcher: numeric, tolerance: 0.01, tolerance_kind: relative, unit: USD}
+
+  - id: effective_date
+    type: extract_date
+    question: The date the agreement takes effect.
+    match: {matcher: date, granularity: day, allow_coarser: false}
+
+  - id: governing_law_span
+    type: span
+    question: The character offsets of the governing-law clause.
+    match: {matcher: span, overlap_threshold: 0.5}
+    group: spans

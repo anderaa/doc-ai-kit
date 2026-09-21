@@ -1,0 +1,12 @@
+# pip-tools flow: pyproject.toml is the source of truth for dependencies
+
+.PHONY: lock sync status
+
+lock:
+	pip-compile --quiet --generate-hashes --strip-extras --output-file=requirements.txt pyproject.toml
+
+sync:
+	pip-sync requirements.txt
+
+status:
+	doc-harness status

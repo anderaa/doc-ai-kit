@@ -1,0 +1,254 @@
+# matcher outcome algebra, asserted case by case
+#
+# The counts matter more than a pass/fail: a wrong non-null answer is both a false positive
+# and a false negative, a correct abstention is a true negative rather than nothing at all,
+# and getting either wrong quietly rewrites precision and recall.
+
+# --- the abstention algebra, exercised on the simplest matcher -------------------------
+- name: correct abstention is a true negative
+  matcher: identity
+  params: {normalizer: enum, enum: [CA, NY]}
+  gold: null
+  pred: null
+  expect: {tp: 0, fp: 0, fn: 0, tn: 1, correct: true}
+
+- name: value where gold is null is a false positive only
+  matcher: identity
+  params: {normalizer: enum, enum: [CA, NY]}
+  gold: null
+  pred: CA
+  expect: {tp: 0, fp: 1, fn: 0, tn: 0, correct: false}
+
+- name: abstention where gold has a value is a false negative only
+  matcher: identity
+  params: {normalizer: enum, enum: [CA, NY]}
+  gold: CA
+  pred: null
+  expect: {tp: 0, fp: 0, fn: 1, tn: 0, correct: false}
+
+- name: wrong non-null value is both a false positive and a false negative
+  matcher: identity
+  params: {normalizer: enum, enum: [CA, NY]}
+  gold: CA
+  pred: NY
+  expect: {tp: 0, fp: 1, fn: 1, tn: 0, correct: false}
+
+- name: an unmapped surface form is wrong without a synonym entry
+  matcher: identity
+  params: {normalizer: enum, enum: [CA, NY]}
+  gold: CA
+  pred: california
+  expect: {tp: 0, fp: 1, fn: 1, tn: 0, correct: false}
+
+- name: synonym reaches the member
+  matcher: identity
+  params: {normalizer: enum, enum: [CA, NY], synonyms: {California: CA}}
+  gold: CA
+  pred: California
+  expect: {tp: 1, fp: 0, fn: 0, tn: 0, correct: true}
+
+- name: out-of-enum prediction is wrong, not an abstention
+  matcher: identity
+  params: {normalizer: enum, enum: [CA, NY]}
+  gold: CA
+  pred: Ontario
+  expect: {tp: 0, fp: 1, fn: 1, tn: 0, correct: false}
+
+- name: booleans compare after canonicalisation
+  matcher: identity
+  params: {normalizer: boolean}
+  gold: true
+  pred: "Yes"
+  expect: {tp: 1, fp: 0, fn: 0, tn: 0, correct: true}
+
+- name: false is a value, not an abstention
+  matcher: identity
+  params: {normalizer: boolean}
+  gold: false
+  pred: "no"
+  expect: {tp: 1, fp: 0, fn: 0, tn: 0, correct: true}
+
+# --- exact ------------------------------------------------------------------------------
+- name: exact ignores casing and whitespace
+  matcher: exact
+  params: {normalizer: free_string}
+  gold: "  Contract   NO-4471 "
+  pred: "contract no-4471"
+  expect: {tp: 1, fp: 0, fn: 0, tn: 0, correct: true}
+
+- name: exact rejects a near miss
+  matcher: exact
+  params: {normalizer: free_string}
+  gold: "NO-4471"
+  pred: "NO-4472"
+  expect: {tp: 0, fp: 1, fn: 1, tn: 0, correct: false}
+
+# --- fuzzy ------------------------------------------------------------------------------
+- name: fuzzy accepts a legal-suffix variant and reports strict alongside
+  matcher: entity_name
+  params: {normalizer: entity_name, theta: 0.90}
+  gold: "Acme Holdings, Inc."
+  pred: "Acme Holdings LLC"
+  expect: {tp: 1, fp: 0, fn: 0, tn: 0, correct: true}
+  strict: {tp: 1, correct: true}
+
+- name: fuzzy accepts a word-order variant that strict equality rejects
+  matcher: entity_name
+  params: {normalizer: free_string, theta: 0.90}
+  gold: "Wesson and Smith"
+  pred: "Smith and Wesson"
+  expect: {tp: 1, fp: 0, fn: 0, tn: 0, correct: true}
+  strict: {tp: 0, fp: 1, fn: 1, correct: false}
+
+- name: fuzzy still rejects a different company
+  matcher: entity_name
+  params: {normalizer: entity_name, theta: 0.90}
+  gold: "Acme Industries"
+  pred: "Acme Holdings"
+  expect: {tp: 0, fp: 1, fn: 1, tn: 0, correct: false}
+  strict: {tp: 0, fp: 1, fn: 1, correct: false}
+
+- name: fuzzy abstention is still a true negative
+  matcher: entity_name
+  params: {normalizer: entity_name, theta: 0.90}
+  gold: null
+  pred: "n/a"
+  expect: {tp: 0, fp: 0, fn: 0, tn: 1, correct: true}
+
+# --- multilabel sets ----------------------------------------------------------------------
+- name: set counts every label separately
+  matcher: set
+  params: {normalizer: enum, enum: [hardware, software, services, support]}
+  gold: [hardware, software]
+  pred: [hardware, services]
+  expect: {tp: 1, fp: 1, fn: 1, tn: 0, correct: false}
+
+- name: exact set match is correct
+  matcher: set
+  params: {normalizer: enum, enum: [hardware, software]}
+  gold: [software, hardware]
+  pred: [hardware, software]
+  expect: {tp: 2, fp: 0, fn: 0, tn: 0, correct: true}
+
+- name: two empty label sets are a true negative
+  matcher: set
+  params: {normalizer: enum, enum: [hardware, software]}
+  gold: []
+  pred: []
+  expect: {tp: 0, fp: 0, fn: 0, tn: 1, correct: true}
+
+- name: labels where gold has none are false positives
+  matcher: set
+  params: {normalizer: enum, enum: [hardware, software]}
+  gold: []
+  pred: [hardware, software]
+  expect: {tp: 0, fp: 2, fn: 0, tn: 0, correct: false}
+
+# --- lists --------------------------------------------------------------------------------
+- name: list pairs items greedily
+  matcher: list
+  params: {normalizer: entity_name, pair_matcher: entity_name, theta: 0.85}
+  gold: ["Jane Doe", "John Roe", "Ann Poe"]
+  pred: ["John Roe", "Jane Doe"]
+  expect: {tp: 2, fp: 0, fn: 1, tn: 0, correct: false}
+
+- name: list tolerates suffix noise within theta
+  matcher: list
+  params: {normalizer: entity_name, pair_matcher: entity_name, theta: 0.85}
+  gold: ["Acme Holdings Inc"]
+  pred: ["Acme Holdings"]
+  expect: {tp: 1, fp: 0, fn: 0, tn: 0, correct: true}
+
+- name: empty lists on both sides are a true negative
+  matcher: list
+  params: {normalizer: entity_name, theta: 1.0}
+  gold: []
+  pred: []
+  expect: {tp: 0, fp: 0, fn: 0, tn: 1, correct: true}
+
+- name: a duplicate prediction cannot match the same gold item twice
+  matcher: list
+  params: {normalizer: entity_name, theta: 1.0}
+  gold: ["Jane Doe"]
+  pred: ["Jane Doe", "Jane Doe"]
+  expect: {tp: 1, fp: 1, fn: 0, tn: 0, correct: false}
+
+# --- numeric ------------------------------------------------------------------------------
+- name: numeric accepts inside the relative tolerance
+  matcher: numeric
+  params: {normalizer: numeric, tolerance: 0.01, tolerance_kind: relative, unit: USD}
+  gold: "$1,000,000"
+  pred: "$1.005M"
+  expect: {tp: 1, fp: 0, fn: 0, tn: 0, correct: true}
+
+- name: numeric rejects outside the relative tolerance
+  matcher: numeric
+  params: {normalizer: numeric, tolerance: 0.01, tolerance_kind: relative, unit: USD}
+  gold: "$1,000,000"
+  pred: "$1.2M"
+  expect: {tp: 0, fp: 1, fn: 1, tn: 0, correct: false}
+
+- name: differing units are a mismatch, never a silent conversion
+  matcher: numeric
+  params: {normalizer: numeric, tolerance: 0.01, tolerance_kind: relative}
+  gold: "$1,000"
+  pred: "€1,000"
+  expect: {tp: 0, fp: 1, fn: 1, tn: 0, correct: false}
+
+- name: absolute tolerance is honoured
+  matcher: numeric
+  params: {normalizer: numeric, tolerance: 5, tolerance_kind: absolute}
+  gold: 100
+  pred: 103
+  expect: {tp: 1, fp: 0, fn: 0, tn: 0, correct: true}
+
+# --- dates --------------------------------------------------------------------------------
+- name: identical full dates match across formats
+  matcher: date
+  params: {normalizer: date, granularity: day}
+  gold: "2024-06-15"
+  pred: "June 15, 2024"
+  expect: {tp: 1, fp: 0, fn: 0, tn: 0, correct: true}
+
+- name: a coarser prediction is wrong by default
+  matcher: date
+  params: {normalizer: date, granularity: day, allow_coarser: false}
+  gold: "2024-06-15"
+  pred: "2024"
+  expect: {tp: 0, fp: 1, fn: 1, tn: 0, correct: false}
+
+- name: a coarser prediction is accepted when the task opts in
+  matcher: date
+  params: {normalizer: date, granularity: day, allow_coarser: true}
+  gold: "2024-06-15"
+  pred: "2024"
+  expect: {tp: 1, fp: 0, fn: 0, tn: 0, correct: true}
+
+- name: opting in still rejects the wrong year
+  matcher: date
+  params: {normalizer: date, granularity: day, allow_coarser: true}
+  gold: "2024-06-15"
+  pred: "2023"
+  expect: {tp: 0, fp: 1, fn: 1, tn: 0, correct: false}
+
+- name: a task declared at month granularity ignores the day
+  matcher: date
+  params: {normalizer: date, granularity: month}
+  gold: "2024-06-15"
+  pred: "2024-06-02"
+  expect: {tp: 1, fp: 0, fn: 0, tn: 0, correct: true}
+
+# --- spans --------------------------------------------------------------------------------
+- name: overlapping spans above threshold are correct
+  matcher: span
+  params: {normalizer: span, overlap_threshold: 0.5}
+  gold: {start: 100, end: 200}
+  pred: {start: 110, end: 205}
+  expect: {tp: 90, fp: 5, fn: 10, tn: 0, correct: true}
+
+- name: barely overlapping spans are wrong
+  matcher: span
+  params: {normalizer: span, overlap_threshold: 0.5}
+  gold: {start: 100, end: 200}
+  pred: {start: 190, end: 290}
+  expect: {tp: 10, fp: 90, fn: 90, tn: 0, correct: false}

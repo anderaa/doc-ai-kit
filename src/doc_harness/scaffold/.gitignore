@@ -1,0 +1,6 @@
+data/
+runs/
+programs/compiled/
+__pycache__/
+*.py[cod]
+.venv/

@@ -1,0 +1,65 @@
+# The synthetic project exercises every task type the harness supports. It is the acceptance
+# test for the hook design, not a demonstration of achievable accuracy: twenty documents
+# cannot measure anything, and the report says so.
+
+tasks:
+  - id: has_arbitration_clause
+    type: binary
+    question: >
+      Whether the agreement requires binding arbitration for disputes. False if disputes go
+      to the courts instead. Null only if the agreement does not address disputes at all.
+    weight: 1.0
+
+  - id: filing_state
+    type: multiclass
+    question: >
+      The US state whose law governs this agreement. Take it from the governing-law clause,
+      not from any mailing address. Null if no US state is named.
+    output:
+      enum: [CA, NY, TX, DE]
+      nullable: true
+      synonyms: {California: CA, "New York": NY, Texas: TX, Delaware: DE}
+    match: {matcher: identity, normalizer: enum}
+    weight: 2.0
+
+  - id: covered_products
+    type: multilabel
+    question: >
+      Which product lines the agreement covers, from the scope clause. Empty list if none is
+      named.
+    output:
+      enum: [hardware, software, services, support]
+
+  - id: contract_number
+    type: extract_exact
+    question: The contract number printed near the top of the agreement, exactly as written.
+
+  - id: counterparty
+    type: extract_fuzzy
+    question: >
+      The legal name of the Customer. Northwind Traders is the Provider and is never the
+      answer.
+    match: {matcher: entity_name, theta: 0.90}
+
+  - id: signatories
+    type: extract_list
+    question: The full names of every person who signed the agreement.
+    match: {matcher: list, pair_matcher: entity_name, theta: 0.85}
+
+  - id: contract_value
+    type: extract_numeric
+    question: The total contract value in US dollars, from the consideration clause.
+    match: {matcher: numeric, tolerance: 0.001, tolerance_kind: relative, unit: USD}
+
+  - id: effective_date
+    type: extract_date
+    question: The date the agreement takes effect.
+    match: {matcher: date, granularity: day, allow_coarser: false}
+
+  - id: governing_law_span
+    type: span
+    question: >
+      The character offsets, into the document text you were given, of the sentence stating
+      which state's law governs. Return start and end offsets.
+    match: {matcher: span, overlap_threshold: 0.5}
+    group: spans
