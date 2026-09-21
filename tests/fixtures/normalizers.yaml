@@ -61,8 +61,15 @@ entity_name:
     - {input: "Smith & Wesson", expect: "smith and wesson"}
     - {input: "Jones-Baker Ltd.", expect: "jones baker"}
     - {input: "not applicable", expect: null}
+    # dotted suffixes collapse before punctuation is stripped, or "l.l.c." becomes "l l c"
+    - {input: "WOODGROVE LOGISTICS, L.L.C.", expect: "woodgrove logistics"}
+    - {input: "Acme N.V.", expect: "acme"}
+    - {input: "U.S. Steel Corp", expect: "us steel"}
+    # a lone initial is not an abbreviation and must survive
+    - {input: "J. Smith Holdings", expect: "j smith holdings"}
   equivalent:
     - ["Acme, Inc.", "ACME INC", "Acme Incorporated", "The Acme Inc"]
+    - ["Woodgrove Logistics LLC", "WOODGROVE LOGISTICS, L.L.C.", "Woodgrove Logistics, L.L.C"]
     - ["Global Widgets Co.", "Global Widgets Company", "global widgets"]
   distinct:
     # collapsing suffixes must not collapse genuinely different companies
@@ -81,8 +88,16 @@ numeric:
     - {input: "€2,000", expect: {value: 2000.0, unit: EUR}}
     - {input: "n/a", expect: null}
     - {input: "several", expect: "several"}
+    # currency written as a word, which a model reading "1,000 dollars" will echo back
+    - {input: {value: 1000, unit: "dollars"}, expect: {value: 1000.0, unit: USD}}
+    - {input: {value: 1000, unit: "US dollars"}, expect: {value: 1000.0, unit: USD}}
+    - {input: {value: 1000, unit: "usd"}, expect: {value: 1000.0, unit: USD}}
+    - {input: {value: 1000, unit: "euros"}, expect: {value: 1000.0, unit: EUR}}
+    # a qualified name is its own currency, never folded into USD
+    - {input: {value: 1000, unit: "Canadian dollars"}, expect: {value: 1000.0, unit: CAD}}
   equivalent:
     - ["$1,200,000", "$1.2M", "$1.2 million"]
+    - [{value: 5, unit: "USD"}, {value: 5, unit: "usd"}, {value: 5, unit: "US dollars"}, {value: 5, unit: "$"}]
 
 date:
   params: {}
@@ -110,3 +125,23 @@ span:
     - {input: [10, 20], expect: {start: 10, end: 20}}
     - {input: {start: 20, end: 10}, expect: null}
     - {input: null, expect: null}
+
+person_name:
+  params: {}
+  cases:
+    - {input: "Dr. Ana Ruiz, PhD", expect: "ana ruiz"}
+    - {input: "Ms. Jane Doe, Esq.", expect: "jane doe"}
+    - {input: "Prof. Mei J. Tanaka", expect: "mei j tanaka"}
+    - {input: "Mary-Kate Olsen", expect: "mary-kate olsen"}
+    - {input: "n/a", expect: null}
+    # generational suffixes distinguish people, so they stay
+    - {input: "John Smith Jr.", expect: "john smith jr"}
+    # a two-letter surname is not a credential
+    - {input: "Wei Ma", expect: "wei ma"}
+    # legal suffixes are an organisation's; a person's surname keeps its "co"
+    - {input: "Maria Co", expect: "maria co"}
+  equivalent:
+    - ["Ana Ruiz", "Dr. Ana Ruiz", "Dr. Ana Ruiz, PhD", "ANA RUIZ"]
+  distinct:
+    - ["John Smith Jr", "John Smith Sr"]
+    - ["Wei Ma", "Wei"]

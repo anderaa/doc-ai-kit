@@ -122,6 +122,8 @@ def entity_name(gold: Any, pred: Any, params: Mapping[str, Any]) -> MatchResult:
         gold_normalized=gold_value,
         pred_normalized=pred_value,
         alternates={"strict": strict},
+        measure=score,
+        threshold=theta,
     )
 
 
@@ -210,7 +212,27 @@ def list_match(gold: Any, pred: Any, params: Mapping[str, Any]) -> MatchResult:
         detail=f"{detail} matched={matched} theta={theta:.2f}",
         gold_normalized=gold_items,
         pred_normalized=pred_items,
+        measure=_closest_pair_to_threshold(gold_items, pred_items, theta),
+        threshold=theta,
     )
+
+
+def _closest_pair_to_threshold(gold_items: list[Any], pred_items: list[Any], theta: float) -> float | None:
+    """Return the best-match similarity, per gold item, that lies nearest the threshold.
+
+    A list decision is only as close as its closest call: one signatory at 0.86 against a
+    theta of 0.85 is the pairing worth a human look, however clean the others are.
+    """
+    best_per_gold: list[float] = []
+    for gold_item in gold_items:
+        scores = [
+            _similarity(gold_item, pred_item) if isinstance(gold_item, str) and isinstance(pred_item, str) else 0.0
+            for pred_item in pred_items
+        ]
+        best_per_gold.append(max(scores, default=0.0))
+    if not best_per_gold:
+        return None
+    return min(best_per_gold, key=lambda score: abs(score - theta))
 
 
 @register_matcher("numeric")
@@ -232,6 +254,10 @@ def numeric(gold: Any, pred: Any, params: Mapping[str, Any]) -> MatchResult:
     allowed = tolerance * abs(gold_value.value) if kind == "relative" else tolerance
     detail = f"{_line(gold_value, pred_value)} delta={difference:g} allowed={allowed:g}"
     result = _scalar_outcome(gold_value, pred_value, difference <= allowed)
+    if allowed > 0:
+        distance: float | None = difference / allowed
+    else:
+        distance = 0.0 if difference == 0 else None
     return MatchResult(
         tp=result.tp,
         fp=result.fp,
@@ -241,6 +267,8 @@ def numeric(gold: Any, pred: Any, params: Mapping[str, Any]) -> MatchResult:
         detail=detail,
         gold_normalized=gold_value,
         pred_normalized=pred_value,
+        measure=distance,
+        threshold=1.0,
     )
 
 
@@ -296,4 +324,6 @@ def span_match(gold: Any, pred: Any, params: Mapping[str, Any]) -> MatchResult:
         detail=detail,
         gold_normalized=gold_value,
         pred_normalized=pred_value,
+        measure=ratio,
+        threshold=threshold,
     )

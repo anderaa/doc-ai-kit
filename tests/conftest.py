@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import importlib.util
+import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from types import ModuleType
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -61,3 +64,22 @@ def scripted_lm(answers: dict[str, dict[str, Any]]) -> Iterator[None]:
     keyed = {f"[doc={doc_id}]": values for doc_id, values in answers.items()}
     with dspy.context(lm=DummyLM(keyed)):
         yield
+
+
+def load_example(name: str) -> ModuleType:
+    """Load an example project's generate.py under a name of its own.
+
+    Both example projects have a generate.py. Importing them by the bare name "generate"
+    makes whichever loads first shadow the other for the rest of the test session.
+    """
+    path = Path(__file__).resolve().parents[1] / "examples" / name / "generate.py"
+    module_name = f"example_{name}_generate"
+    if module_name in sys.modules:
+        return sys.modules[module_name]
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module

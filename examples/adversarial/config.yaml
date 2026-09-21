@@ -1,0 +1,48 @@
+# Adversarial settings: identical to examples/synthetic/config.yaml apart from the two
+# lines marked below. Floors are low because 24 documents cannot reach a real support floor.
+
+models:
+  task: anthropic/claude-sonnet-5
+  reflection: anthropic/claude-opus-5
+  temperature: 1.0
+  # raised from 4096: the synthetic run showed responses truncating, which fails parsing
+  max_tokens: 8192
+
+extraction:
+  extractor: pymupdf
+  fallback_extractor: pdfplumber
+  ocr_fallback: false
+  ocr_chars_per_page: 100
+  truncation:
+    max_chars: null
+    strategy: head
+
+splits:
+  seed: 20260918
+  # raised from 3 so the Texas class (3 examples) falls under it and the stop fires
+  support_floor: 4
+  measurable_floor: 3
+
+optimization:
+  optimizer: BootstrapFewShot
+  auto: light
+  module: predict
+  max_bootstrapped_demos: 3
+  max_labeled_demos: 3
+  num_threads: 4
+  max_experiments: 4
+  max_rollouts: 1500
+
+metric:
+  abstention: scored
+  bootstrap_resamples: 500
+  excluded_classes: {}
+
+production:
+  max_retries: 2
+  batch_size: 8
+  spot_check_sample: 5
+  max_schema_failure_rate: 0.005
+
+budget:
+  max_usd: 20.0

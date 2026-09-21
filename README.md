@@ -35,8 +35,8 @@ newproject "Acme Contracts"
 
 `newproject` runs outside any project, because what it writes is the exact harness pin the
 project installs. Everything else runs from inside the project: `status`, `extract`,
-`audit-labels`, `make-splits`, `run-baseline`, `compile`, `rescore`, `holdout`,
-`production`, `close`.
+`audit-labels`, `make-splits`, `run-baseline`, `compile`, `rescore`, `adjudicate`,
+`holdout`, `production`, `close`.
 
 ## What is load-bearing
 
@@ -59,6 +59,8 @@ failure is silent -- the numbers keep going up while the measurement stops meani
   and the compiled program behaves as if they do not exist.
 - **Every run saves its predictions.** Fixing a matcher and re-measuring costs nothing
   (`doc-harness rescore`), so nobody is tempted to leave the bug in to avoid paying again.
+- **Threshold decisions are surfaced, not buried.** `doc-harness adjudicate` lists every call a
+  threshold actually made, raw and normalized side by side, for a human to confirm.
 
 ## Layout
 
@@ -82,7 +84,8 @@ src/doc_harness/
   scaffold/       files copied into a new project
 fragments/        instruction fragment library, by task type
 ledger.csv        one row per completed project
-examples/synthetic/  the acceptance test corpus
+examples/synthetic/    the acceptance test: does the pipeline run end to end
+examples/adversarial/  the matcher check: does scoring hold up on documents built to trap it
 ```
 
 ## Installing into a project

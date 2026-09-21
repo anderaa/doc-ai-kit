@@ -47,7 +47,8 @@ tasks:
   # - id: signatories
   #   type: extract_list
   #   question: Every person who signed the agreement.
-  #   match: {matcher: list, pair_matcher: entity_name, theta: 0.85}
+  #   # person_name strips titles and credentials; entity_name is for organisations
+  #   match: {matcher: list, normalizer: person_name, theta: 0.85}
 
   # - id: contract_value
   #   type: extract_numeric

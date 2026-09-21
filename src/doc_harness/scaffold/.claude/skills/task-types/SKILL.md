@@ -30,6 +30,11 @@ type, normalizer, matcher and report section are all generated from it.
 - **A name** is `extract_fuzzy`, not `extract_exact`. Legal suffixes and punctuation vary and
   none of that is a substantive disagreement. But set `theta` deliberately -- there is no
   default, because a silent threshold decides what counts as correct.
+- **A person's name** uses `normalizer: person_name`, not the default `entity_name`. The two
+  strip different things: `entity_name` removes legal suffixes, which damages a surname like
+  "Co"; `person_name` removes titles and credentials ("Dr.", "PhD"), which would damage an
+  organisation like "Dr Pepper". Using the wrong one scores "Dr. Ana Ruiz" as a different
+  person from "Ana Ruiz".
 - **A date** is `extract_date`, never a string. Granularity is preserved: "2024" and
   "2024-06-15" are different claims, and whether the coarser one matches is per-task config
   defaulting to no.

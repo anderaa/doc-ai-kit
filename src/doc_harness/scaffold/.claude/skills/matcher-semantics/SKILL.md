@@ -63,6 +63,10 @@ into a false negative.
 
 ## Adjudicating a borderline fuzzy match
 
+Start with `doc-harness adjudicate <run>`. It lists every decision a threshold actually made --
+including any acceptance strict equality would have refused, however far from theta the score
+landed -- with raw and normalized values side by side. It reads saved predictions, so it is free.
+
 When a fuzzy match sits near theta, do not move theta to make one document pass. Instead:
 
 1. Look at the normalized forms in `failures.md`, not the raw ones. Most borderline cases are

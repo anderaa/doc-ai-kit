@@ -21,6 +21,8 @@ from typing import Any
 import click
 
 from doc_harness import __version__
+from doc_harness.adjudicate import adjudicate as run_adjudication
+from doc_harness.adjudicate import write_adjudication
 from doc_harness.baseline import run_baselines
 from doc_harness.config import Config
 from doc_harness.dataset import (
@@ -490,6 +492,35 @@ def rescore(project: Project, run_id: str) -> None:
         was = float(previous["aggregate"]["per_task_primary"].get(task_id, 0.0))
         marker = "" if abs(was - value) < 1e-9 else f"  (was {was:.3f})"
         click.echo(f"  {task_id:<24} {value:.3f}{marker}")
+
+
+@cli.command()
+@click.argument("run_id")
+@pass_project
+def adjudicate(project: Project, run_id: str) -> None:
+    """List every decision a threshold made in a run, for a human to check.
+
+    Reads the run's saved predictions, so it costs no inference. Writes adjudication.md into
+    the run directory.
+    """
+    project.load_customizations()
+    run_dir = project.runs / run_id
+    predictions = load_predictions(run_dir / "predictions.jsonl")
+    doc_ids = list(predictions)
+    golds = project.examples_for(doc_ids)
+    report = run_adjudication(
+        project.registry,
+        project.metric(),
+        golds,
+        [predictions[doc_id] for doc_id in doc_ids],
+        run_id=run_id,
+    )
+    path = run_dir / "adjudication.md"
+    write_adjudication(path, report)
+    click.echo(
+        f"{run_id}: {len(report.decisions)} close call(s) and {len(report.errors)} other error(s) "
+        f"across {report.n_examples} documents. Wrote {path}."
+    )
 
 
 @cli.command()

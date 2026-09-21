@@ -72,6 +72,11 @@ class MatchResult:
     # the normalized values compared, kept so evaluate.py can build confusion matrices
     gold_normalized: object | None = None
     pred_normalized: object | None = None
+    # how close the call was, for thresholded matchers: a similarity, an overlap ratio, or a
+    # distance-to-tolerance ratio, beside the threshold it was judged against. Kept so a human
+    # can adjudicate the decisions a threshold actually made rather than parse them from text.
+    measure: float | None = None
+    threshold: float | None = None
     # side-by-side results under other criteria, e.g. {"strict": ...} for fuzzy tasks
     alternates: dict[str, MatchResult] = field(default_factory=dict)
 

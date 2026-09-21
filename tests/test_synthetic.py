@@ -7,20 +7,24 @@ would make the acceptance test meaningless rather than failing.
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
 import pytest
+from conftest import load_example
+
+from doc_harness.dataset import load_labels, load_splits
+from doc_harness.metric import build_metric
+from doc_harness.registry import Registry, TaskType
+from doc_harness.splits import class_supports, make_splits
 
 EXAMPLES = Path(__file__).resolve().parents[1] / "examples" / "synthetic"
-sys.path.insert(0, str(EXAMPLES))
-
-from generate import build_specs, generate, mark_holdout_blind, span_for  # noqa: E402
-
-from doc_harness.dataset import load_labels, load_splits  # noqa: E402
-from doc_harness.metric import build_metric  # noqa: E402
-from doc_harness.registry import Registry, TaskType  # noqa: E402
-from doc_harness.splits import class_supports, make_splits  # noqa: E402
+_synthetic = load_example("synthetic")
+build_specs, generate, mark_holdout_blind, span_for = (
+    _synthetic.build_specs,
+    _synthetic.generate,
+    _synthetic.mark_holdout_blind,
+    _synthetic.span_for,
+)
 
 
 @pytest.fixture(scope="module")

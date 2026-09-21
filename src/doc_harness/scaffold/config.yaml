@@ -55,7 +55,9 @@ metric:
   # so switching it is a decision to record in decisions.md.
   abstention: scored
   bootstrap_resamples: 2000
-  # written by the support-floor decision in make-splits; never inferred
+  # added by hand when make-splits records a report_unmeasured decision; never inferred.
+  # make-splits prints the exact line to add rather than rewriting this file, which would
+  # strip every comment in it
   excluded_classes: {}
 
 production:

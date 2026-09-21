@@ -1,6 +1,5 @@
-# The synthetic project exercises every task type the harness supports. It is the acceptance
-# test for the hook design, not a demonstration of achievable accuracy: twenty documents
-# cannot measure anything, and the report says so.
+# Identical to examples/synthetic/tasks.yaml, deliberately: the adversarial corpus changes
+# the documents and nothing else, so any difference in the results is the documents.
 
 tasks:
   - id: has_arbitration_clause

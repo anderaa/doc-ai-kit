@@ -69,6 +69,16 @@ LEGAL_SUFFIXES = (
 
 _LEADING_ARTICLES = ("the ", "a ", "an ")
 
+# "l.l.c." or "n.v": letters joined by dots, collapsed to "llc" before punctuation is stripped;
+# otherwise the dots become spaces and "l l c" matches no legal suffix at all. Needs two or
+# more letters, so a lone initial such as "j." is left alone.
+_DOTTED_ABBREVIATION = re.compile(r"\b(?:[a-z]\.){1,}[a-z]\b\.?")
+
+# titles and credentials that never distinguish one person from another. Generational
+# suffixes -- jr, sr, ii, iii -- are deliberately absent: they do distinguish people.
+_HONORIFICS = frozenset({"mr", "mrs", "ms", "mx", "miss", "dr", "prof", "professor", "sir", "dame", "rev", "hon"})
+_CREDENTIALS = frozenset({"phd", "md", "jd", "esq", "mba", "cpa", "dds", "llm", "msc", "bsc"})
+
 _TRUE_TOKENS = frozenset({"true", "t", "yes", "y", "1", "affirmative", "present"})
 _FALSE_TOKENS = frozenset({"false", "f", "no", "n", "0", "negative", "absent"})
 
@@ -87,6 +97,18 @@ _MAGNITUDES = {
 }
 
 _CURRENCY_SYMBOLS = {"$": "USD", "€": "EUR", "£": "GBP", "¥": "JPY"}
+
+# currency names as a model or a labeler writes them. Qualified names map to their own code.
+_CURRENCY_NAMES = {
+    "us dollar": "USD", "us dollars": "USD", "u.s. dollars": "USD", "us$": "USD", "usd": "USD",
+    "canadian dollar": "CAD", "canadian dollars": "CAD", "cad": "CAD", "c$": "CAD",
+    "australian dollar": "AUD", "australian dollars": "AUD", "aud": "AUD", "a$": "AUD",
+    "euro": "EUR", "euros": "EUR", "eur": "EUR",
+    "pound sterling": "GBP", "pounds sterling": "GBP", "british pounds": "GBP", "gbp": "GBP",
+    "yen": "JPY", "japanese yen": "JPY", "jpy": "JPY",
+}  # fmt: skip
+# a bare "dollars" says which currency family but not which member of it
+_DOLLAR_CODES = frozenset({"USD", "CAD", "AUD", "NZD", "SGD", "HKD"})
 
 _MONTHS = {
     "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
@@ -257,6 +279,7 @@ def entity_name(value: Any, params: Mapping[str, Any]) -> str | None:
         return None
     text = collapse_whitespace(fold_unicode(_as_text(value))).casefold()
     text = text.replace("&", " and ")
+    text = _DOTTED_ABBREVIATION.sub(lambda match: match.group(0).replace(".", ""), text)
     text = re.sub(r"[.,;:()\[\]{}'\"`/\\]", " ", text)
     text = re.sub(r"\s*-\s*", " ", text)
     text = collapse_whitespace(text)
@@ -266,6 +289,29 @@ def entity_name(value: Any, params: Mapping[str, Any]) -> str | None:
             break
     text = _strip_legal_suffixes(text)
     return collapse_whitespace(text)
+
+
+@register_normalizer("person_name")
+def person_name(value: Any, params: Mapping[str, Any]) -> str | None:
+    """Canonicalize a person's name for comparison.
+
+    Separate from :func:`entity_name` on purpose. Legal suffixes are an organisation's, and
+    stripping "co" or "group" from a person's surname damages it; titles and credentials are
+    a person's, and stripping a leading "dr" from an organisation ("Dr Pepper") damages that.
+    Only what never distinguishes two people is removed: honorifics and credentials.
+    """
+    if _is_null(value, params):
+        return None
+    text = collapse_whitespace(fold_unicode(_as_text(value))).casefold()
+    text = _DOTTED_ABBREVIATION.sub(lambda match: match.group(0).replace(".", ""), text)
+    text = re.sub(r"[.,;:()\[\]{}'\"`/\\]", " ", text)
+    text = re.sub(r"\s*-\s*", "-", text)
+    tokens = collapse_whitespace(text).split(" ")
+    while tokens and tokens[0] in _HONORIFICS:
+        tokens = tokens[1:]
+    while tokens and tokens[-1] in _CREDENTIALS:
+        tokens = tokens[:-1]
+    return " ".join(tokens) or None
 
 
 def _parse_number(text: str) -> tuple[float, float] | None:
@@ -297,7 +343,9 @@ def numeric(value: Any, params: Mapping[str, Any]) -> Quantity | str | None:
     if _is_null(value, params):
         return None
     if isinstance(value, Quantity):
-        return value
+        # a typed model output still needs its unit canonicalized: "usd" and "USD" are the
+        # same currency, and returning the object untouched scored that as a unit mismatch
+        return Quantity(value=value.value, unit=_canonical_unit(value.unit, params))
     if isinstance(value, bool):
         return collapse_whitespace(_as_text(value)).casefold()
     if isinstance(value, int | float):
@@ -339,18 +387,29 @@ def numeric(value: Any, params: Mapping[str, Any]) -> Quantity | str | None:
 
 
 def _canonical_unit(unit: Any, params: Mapping[str, Any]) -> str | None:
-    """Fold a unit through the task's alias map and upper-case currency-style codes."""
+    """Fold a unit onto a canonical code: task aliases first, then currency names and symbols.
+
+    A bare "dollars" resolves to the task's declared unit when that is a dollar currency,
+    and to USD otherwise -- the same convention the "$" symbol already follows. That is an
+    assumption, and a project whose documents mix dollar currencies should declare
+    unit_aliases rather than rely on it.
+    """
+    declared = params.get("unit")
     if unit is None:
-        return params.get("unit")
+        return declared
     text = collapse_whitespace(fold_unicode(_as_text(unit))).casefold()
     if not text:
-        return params.get("unit")
+        return declared
     aliases: Mapping[str, str] = params.get("unit_aliases") or {}
     for surface, target in aliases.items():
         if text == collapse_whitespace(fold_unicode(surface)).casefold():
             return target
-    if text in {symbol.casefold() for symbol in _CURRENCY_SYMBOLS.values()}:
-        return text.upper()
+    if text in _CURRENCY_NAMES:
+        return _CURRENCY_NAMES[text]
+    if text in _CURRENCY_SYMBOLS:
+        return _CURRENCY_SYMBOLS[text]
+    if text in {"dollar", "dollars"}:
+        return declared if declared in _DOLLAR_CODES else "USD"
     return text
 
 

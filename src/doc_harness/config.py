@@ -138,7 +138,7 @@ class MetricConfig(_Strict):
     abstention: Literal["scored", "best_guess"] = "scored"
     bootstrap_resamples: int = Field(default=2000, ge=100)
     # classes recorded as report-unmeasured: still scored and reported, but dropped from
-    # the optimization target; written here by the support-floor decision, never inferred
+    # the optimization target; added by hand after make-splits records the decision
     excluded_classes: dict[str, list[str]] = Field(default_factory=dict)
 
 
