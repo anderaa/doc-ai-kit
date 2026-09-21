@@ -201,7 +201,12 @@ def _value(kind: str, index: int) -> tuple[str, Trap]:
             Trap(
                 gold={"value": float(amount), "unit": "USD"},
                 kind=kind,
-                accept=[{"value": float(amount), "unit": "USD"}, f"${amount / 1_000_000:g}M"],
+                # the model answered in this last form at medium effort; it is right
+                accept=[
+                    {"value": float(amount), "unit": "USD"},
+                    f"${amount / 1_000_000:g}M",
+                    {"value": amount / 1_000_000, "unit": "million USD"},
+                ],
                 reject=[{"value": amount / 1_000_000, "unit": "USD"}],
             ),
         )

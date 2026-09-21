@@ -20,8 +20,25 @@ one version is not comparable with a number measured under another.
   not to ask for offsets -- the harness now appends how to answer. **Recompile** any program
   with a span task: one compiled under 0.1.3 carries demonstrations in the old format.
 
+- **Thinking is now configurable.** `models.task_effort` (low to max) and `models.task_thinking`
+  (adaptive or disabled) control how hard the task model thinks. Both are unset by default, so
+  nothing changes until a project chooses. Every truncated reply in the harness's own runs was
+  the model spending its whole `max_tokens` budget thinking and never answering; thinking is
+  also billed as output. Every run now records these settings in its metadata.
+  Measured on the adversarial corpus, all four settings -- default, medium, low, thinking off
+  -- scored 0.996, each missing one different document. Thinking fell from 1,587 tokens to
+  none and cost by about 8%, with no truncations under any setting. The earlier truncations
+  came from asking for character offsets, which span tasks no longer do; the default is
+  therefore left unchanged, and a project should measure before lowering it.
+
 Fixed:
 
+- **A magnitude word in the unit was scored as a unit mismatch.** Asked for a contract value,
+  the model answered 3.25 with unit "million USD" -- correct -- and it was scored wrong against
+  3,250,000 USD. "thousand", "million", "billion" and "bn" in a unit now move into the number.
+- **The optimizer built its task model without the configured settings** -- no temperature,
+  no `max_tokens` -- so MIPROv2 compiled under different conditions from the ones the program
+  then ran under. Every task model now comes from one constructor.
 - **outputs.jsonl and production checkpoints wrote typed values as Python repr text** -- a
   contract value arrived as `"value=375000.0 unit='USD'"`. They are now structured JSON, and a
   resumed run reads them back as values rather than strings.

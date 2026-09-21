@@ -98,6 +98,16 @@ _MAGNITUDES = {
 
 _CURRENCY_SYMBOLS = {"$": "USD", "€": "EUR", "£": "GBP", "¥": "JPY"}
 
+# magnitude words a model puts in the unit rather than the number: 3.25 with unit "million USD"
+# is 3,250,000 USD. Single letters are left out -- "k" or "m" alone in a unit field is as
+# likely a unit (kelvin, metres) as a multiplier.
+_UNIT_MAGNITUDES = {
+    "thousand": 1e3, "thousands": 1e3,
+    "million": 1e6, "millions": 1e6, "mm": 1e6,
+    "billion": 1e9, "billions": 1e9, "bn": 1e9,
+    "trillion": 1e12, "trillions": 1e12,
+}  # fmt: skip
+
 # currency names as a model or a labeler writes them. Qualified names map to their own code.
 _CURRENCY_NAMES = {
     "us dollar": "USD", "us dollars": "USD", "u.s. dollars": "USD", "us$": "USD", "usd": "USD",
@@ -350,7 +360,8 @@ def numeric(value: Any, params: Mapping[str, Any]) -> Quantity | str | None:
     if isinstance(value, Quantity):
         # a typed model output still needs its unit canonicalized: "usd" and "USD" are the
         # same currency, and returning the object untouched scored that as a unit mismatch
-        return Quantity(value=value.value, unit=_canonical_unit(value.unit, params))
+        amount, stated_unit = _split_unit_magnitude(value.value, value.unit)
+        return Quantity(value=amount, unit=_canonical_unit(stated_unit, params))
     if isinstance(value, bool):
         return collapse_whitespace(_as_text(value)).casefold()
     if isinstance(value, int | float):
@@ -363,7 +374,8 @@ def numeric(value: Any, params: Mapping[str, Any]) -> Quantity | str | None:
         if parsed is None:
             return collapse_whitespace(_as_text(raw_value)).casefold()
         number, multiplier = parsed
-        return Quantity(value=number * multiplier, unit=_canonical_unit(value.get("unit"), params))
+        amount, stated_unit = _split_unit_magnitude(number * multiplier, value.get("unit"))
+        return Quantity(value=amount, unit=_canonical_unit(stated_unit, params))
     text = collapse_whitespace(fold_unicode(_as_text(value)))
     unit: str | None = None
     for symbol, code in _CURRENCY_SYMBOLS.items():
@@ -389,6 +401,28 @@ def numeric(value: Any, params: Mapping[str, Any]) -> Quantity | str | None:
     if unit is None and trailing:
         unit = trailing
     return Quantity(value=amount, unit=_canonical_unit(unit, params))
+
+
+def _split_unit_magnitude(amount: float, unit: Any) -> tuple[float, Any]:
+    """Move a magnitude word out of the unit and into the number.
+
+    A model asked for a value will sometimes answer 3.25 with unit "million USD". That is the
+    right answer, and scoring it as a unit mismatch against 3,250,000 USD calls a correct
+    extraction wrong.
+    """
+    if not isinstance(unit, str):
+        return amount, unit
+    tokens = collapse_whitespace(fold_unicode(unit)).casefold().split(" ")
+    multiplier = 1.0
+    kept = []
+    for token in tokens:
+        if token in _UNIT_MAGNITUDES:
+            multiplier *= _UNIT_MAGNITUDES[token]
+        else:
+            kept.append(token)
+    if multiplier == 1.0:
+        return amount, unit
+    return amount * multiplier, " ".join(kept) or None
 
 
 def _canonical_unit(unit: Any, params: Mapping[str, Any]) -> str | None:

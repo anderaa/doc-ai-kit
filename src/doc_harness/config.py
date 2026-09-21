@@ -34,10 +34,48 @@ class ModelConfig(_Strict):
 
     task: str | None = None
     reflection: str | None = None
+    # how hard the task model thinks before answering. Thinking is on by default for the Claude
+    # 5 family, it is billed as output, and it counts against max_tokens: every truncation seen
+    # in this harness's own runs was a reply that spent its whole budget thinking and never
+    # answered. Unset leaves the provider's default in place, so nothing changes silently.
+    task_effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None
+    # "disabled" turns thinking off outright. Prefer a lower task_effort: switching thinking off
+    # has known failure modes on some models that a low effort avoids
+    task_thinking: Literal["adaptive", "disabled"] | None = None
     # 1.0 rather than 0.0: the Claude 5 family accepts only temperature=1, and a default of
     # 0.0 makes every run fail at the first call rather than at configuration time
     temperature: float = Field(default=1.0, ge=0.0, le=2.0)
     max_tokens: int = Field(default=4096, gt=0)
+
+    @model_validator(mode="after")
+    def _effort_and_thinking_agree(self) -> ModelConfig:
+        # an effort level is a thinking depth, so it cannot sit alongside thinking switched off;
+        # the provider mapping would quietly switch thinking back on rather than refuse
+        if self.task_thinking == "disabled" and self.task_effort is not None:
+            raise ValueError(
+                "models.task_effort and task_thinking: disabled cannot be combined. An effort level "
+                "sets how deeply the model thinks; set one or the other"
+            )
+        return self
+
+    def task_lm_kwargs(self) -> dict[str, Any]:
+        """Return the provider settings for the task model's thinking, as the LM takes them."""
+        if self.task_effort is not None:
+            # LiteLLM maps this to adaptive thinking plus output_config.effort for Claude 5
+            return {"reasoning_effort": self.task_effort}
+        if self.task_thinking is not None:
+            return {"thinking": {"type": self.task_thinking}}
+        return {}
+
+    def describe(self) -> dict[str, Any]:
+        """Return the model settings every run records, so two runs can be told apart."""
+        return {
+            "task_model": self.task,
+            "task_effort": self.task_effort,
+            "task_thinking": self.task_thinking,
+            "reflection_model": self.reflection,
+            "max_tokens": self.max_tokens,
+        }
 
     def require_task(self) -> str:
         """Return the task model, failing loudly rather than picking one."""

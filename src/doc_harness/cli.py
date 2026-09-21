@@ -47,7 +47,7 @@ from doc_harness.hooks import load_project_customizations
 from doc_harness.metric import build_metric
 from doc_harness.optimize import require_champion, run_experiment
 from doc_harness.produce import ProductionResult, produce, run_qa, triage, write_outputs, write_qa_report
-from doc_harness.program import load_program
+from doc_harness.program import load_program, task_lm
 from doc_harness.registry import Registry
 from doc_harness.report import append_ledger, run_holdout, write_report
 from doc_harness.scaffold_writer import HARNESS_REPO, PIN_MODES, ScaffoldOptions, create_project
@@ -124,14 +124,13 @@ class Project:
         import dspy
 
         models = self.config.models
-        dspy.configure(
-            lm=dspy.LM(
-                models.require_task(),
-                temperature=models.temperature,
-                max_tokens=models.max_tokens,
-            )
+        dspy.configure(lm=task_lm(models))
+        logger.info(
+            "using task model %s (effort %s, thinking %s)",
+            models.task,
+            models.task_effort or "default",
+            models.task_thinking or "default",
         )
-        logger.info("using task model %s", models.task)
 
     def examples_for(self, doc_ids: Sequence[str]) -> list[Any]:
         """Build DSPy examples for a set of documents."""

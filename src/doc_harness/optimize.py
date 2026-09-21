@@ -28,7 +28,7 @@ from doc_harness.config import Config
 from doc_harness.evaluate import EvaluationResult, run_program, score_split, write_run
 from doc_harness.guards import GuardError, check_experiment_budget, check_rollout_budget, readonly
 from doc_harness.metric import Metric, get_field
-from doc_harness.program import build_program, instructions_of, load_program, save_program
+from doc_harness.program import build_program, instructions_of, load_program, save_program, task_lm
 from doc_harness.registry import Registry, TaskType
 from doc_harness.splits import CLASSIFICATION_TYPES, _labels_of
 
@@ -241,7 +241,7 @@ def build_optimizer(config: Config, metric: CountingMetric) -> Any:
             seed=config.splits.seed,
             # both are required: MIPROv2 refuses to construct with only one of them set
             prompt_model=dspy.LM(config.models.require_reflection()),
-            task_model=dspy.LM(config.models.require_task()),
+            task_model=task_lm(config.models),
         )
     if name == "GEPA":
         return GEPA(
@@ -413,8 +413,7 @@ def run_experiment(
             "split": "val",
             "optimizer": config.optimization.optimizer,
             "module": config.optimization.module,
-            "task_model": config.models.task,
-            "reflection_model": config.models.reflection,
+            **config.models.describe(),
             "config_hash": config.fingerprint(),
             "instructions": instructions_of(compiled),
             "variable": variable,
@@ -438,8 +437,7 @@ def run_experiment(
             "num_candidates": config.optimization.num_candidates,
             "num_trials": config.optimization.num_trials,
             "max_rollouts": config.optimization.max_rollouts,
-            "task_model": config.models.task,
-            "reflection_model": config.models.reflection,
+            **config.models.describe(),
             "trainset_size": len(trainset),
             "valset_size": len(valset),
             "variable": variable,

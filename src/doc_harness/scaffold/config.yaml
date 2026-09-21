@@ -9,7 +9,15 @@ models:
   reflection: null
   # the Claude 5 family accepts only temperature=1; lower it only for a model that allows it
   temperature: 1.0
+  # counts thinking as well as the answer: a reply that spends it all thinking returns nothing
   max_tokens: 4096
+  # how hard the task model thinks: low | medium | high | xhigh | max, or null for the
+  # provider's default. Thinking is billed as output and counts against max_tokens. Measure a
+  # lower effort on a labeled split before adopting it -- see examples/adversarial for a run
+  task_effort: null
+  # adaptive | disabled | null. Prefer lowering task_effort to disabling thinking outright;
+  # the two cannot be combined
+  task_thinking: null
 
 extraction:
   extractor: pymupdf

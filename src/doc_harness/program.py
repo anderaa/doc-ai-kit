@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from doc_harness.adapters import strict_version_of
-from doc_harness.config import OptimizationConfig
+from doc_harness.config import ModelConfig, OptimizationConfig
 from doc_harness.normalize import is_null
 from doc_harness.registry import Registry, TaskType
 from doc_harness.spans import locate_quote
@@ -131,6 +131,23 @@ def _attribute_for(group: str) -> str:
     """
     cleaned = "".join(character if character.isalnum() else "_" for character in group)
     return f"predict_{cleaned}"
+
+
+def task_lm(models: ModelConfig) -> Any:
+    """Build the task model exactly as config.yaml describes it.
+
+    One constructor for every place the task model is made -- the project CLI, the optimizer,
+    the examples -- so a program is never compiled under different settings from the ones it
+    is evaluated and run under.
+    """
+    import dspy
+
+    return dspy.LM(
+        models.require_task(),
+        temperature=models.temperature,
+        max_tokens=models.max_tokens,
+        **models.task_lm_kwargs(),
+    )
 
 
 def build_from_config(registry: Registry, config: OptimizationConfig, **kwargs: Any) -> Any:

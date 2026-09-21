@@ -95,9 +95,16 @@ numeric:
     - {input: {value: 1000, unit: "euros"}, expect: {value: 1000.0, unit: EUR}}
     # a qualified name is its own currency, never folded into USD
     - {input: {value: 1000, unit: "Canadian dollars"}, expect: {value: 1000.0, unit: CAD}}
+    # a magnitude word in the unit belongs in the number; seen from the model at medium effort
+    - {input: {value: 3.25, unit: "million USD"}, expect: {value: 3250000.0, unit: USD}}
+    - {input: {value: 2, unit: "USD millions"}, expect: {value: 2000000.0, unit: USD}}
+    - {input: {value: 1.5, unit: "bn EUR"}, expect: {value: 1500000000.0, unit: EUR}}
+    # a single letter is too ambiguous to read as a multiplier
+    - {input: {value: 5, unit: "k"}, expect: {value: 5.0, unit: k}}
   equivalent:
     - ["$1,200,000", "$1.2M", "$1.2 million"]
     - [{value: 5, unit: "USD"}, {value: 5, unit: "usd"}, {value: 5, unit: "US dollars"}, {value: 5, unit: "$"}]
+    - [{value: 3250000, unit: "USD"}, {value: 3.25, unit: "million USD"}, {value: 3250, unit: "thousand USD"}]
 
 date:
   params: {}

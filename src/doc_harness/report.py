@@ -264,7 +264,7 @@ def run_holdout(
             "run": "holdout",
             "split": "holdout",
             "module": config.optimization.module,
-            "task_model": config.models.task,
+            **config.models.describe(),
             "config_hash": config.fingerprint(),
             "opened_by": opened_by,
             "overrides": lock.overrides,

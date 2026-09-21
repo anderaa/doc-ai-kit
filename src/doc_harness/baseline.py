@@ -121,7 +121,7 @@ def _evaluate(
             "baseline": name,
             "split": "val",
             "module": config.optimization.module,
-            "task_model": config.models.task,
+            **config.models.describe(),
             "config_hash": config.fingerprint(),
             "instructions": instructions_of(program),
         },
