@@ -15,7 +15,7 @@ pdfs -> text cache -> DSPy program -> typed outputs -> normalize -> match
                       optimizer <----- metric <----------------- gold labels
 ```
 
-## Install
+## Developing the harness
 
 ```
 pyenv virtualenv 3.12.11 doc-harness
@@ -27,16 +27,210 @@ make sync
 
 `make check` runs ruff, black, mypy and pytest.
 
-## Start a project
+## Running a project
+
+Each project is its own GitHub repo. It does not contain the harness: it pins an exact
+harness version and installs it from this repo's tags. Nothing here is forked or copied.
+
+### What you need first
+
+- pyenv, with the Python the project will use: `pyenv install 3.12.11`.
+- pipx (`brew install pipx`), to run `newproject` without installing the harness anywhere.
+- The GitHub CLI, signed in (`gh auth login`), to create the repo.
+- `ANTHROPIC_API_KEY` set in your shell. Commands that call a model read it from there.
+- Claude Code, for the session that runs the project.
+
+### 1. Create the project and its repo
+
+Run this **outside** the harness checkout, e.g. from `~/Projects`, so the project does not
+end up nested inside this repo:
 
 ```
-newproject "Acme Contracts"
+cd ~/Projects
+pipx run --spec "git+https://github.com/anderaa/doc-harness.git@v0.1.6" newproject "Acme Contracts"
+cd acme-contracts
+git init
+git add -A
+git commit -m "Start project from doc-harness v0.1.6"
+gh repo create acme-contracts --private --source=. --remote=origin --push
 ```
 
-`newproject` runs outside any project, because what it writes is the exact harness pin the
-project installs. Everything else runs from inside the project: `status`, `extract`,
-`sample-labels`, `label-sheet`, `import-labels`, `audit-labels`, `make-splits`,
-`run-baseline`, `compile`, `rescore`, `adjudicate`, `holdout`, `production`, `close`.
+`newproject` writes a folder named after the project, with the guidance files, a
+`tasks.yaml` and `config.yaml` to fill in, and a `pyproject.toml` that pins the harness to
+the tag it was run from. It does not install anything, call a model, or set up git.
+
+Keep the repo private. What it holds -- labels, decisions, task definitions -- describes
+the client's documents. The documents themselves are never committed: `.gitignore` leaves
+out `data/pdfs/` and `data/text/`. `runs/` is left out too, so run results and the holdout
+lock stay on the machine that made them.
+
+### 2. Set up the environment
+
+```
+pyenv virtualenv 3.12.11 acme-contracts
+pyenv local acme-contracts
+pip install pip-tools
+make lock
+make sync
+doc-harness status
+git add requirements.txt && git commit -m "Lock dependencies" && git push
+```
+
+Until the virtualenv exists, pyenv reports an error inside the folder: `.python-version`
+already names it. `make lock` pins every dependency; commit the result so anyone cloning
+the repo installs exactly the same versions.
+
+### 3. Add the documents and start Claude
+
+Copy the PDFs into `data/pdfs/`, then start Claude Code from inside the project folder:
+
+```
+claude
+```
+
+Starting there is what loads the project's `CLAUDE.md` and `.claude/commands/`. The
+guidance tells Claude to run `doc-harness status` first, and `status` always says which
+step is next. From here Claude can run the commands; the steps below are what it runs, and
+what you decide along the way.
+
+### 4. Declare the tasks and pick the model
+
+- Write `tasks.yaml`: one entry per question, with its type and matching rule. The file
+  has a commented example of every type. Claude can read a few documents and help word
+  the questions -- the question is the definition the model works from.
+- In `config.yaml`, set `models.task` and `models.reflection` (e.g.
+  `anthropic/claude-sonnet-5` and `anthropic/claude-opus-5`), and the truncation policy
+  if documents are long. There is no default model, so nothing spends money before this.
+- Commit.
+
+`budget.max_usd` is recorded with each run but not enforced. Watch spending in the
+Anthropic console.
+
+### 5. Extract the text
+
+```
+doc-harness extract
+```
+
+Text is cached in `data/text/` and read by every later step. Documents with a thin text
+layer are flagged; decide deliberately whether to turn on OCR (the `ocr` extra).
+
+### 6. Label
+
+```
+doc-harness sample-labels --count 120
+doc-harness label-sheet
+```
+
+`sample-labels` picks the documents to label, and the holdout among them, at random. Pick
+the count from how many examples the rarest class needs (the `sample-sizes` skill), not
+from how much time there is.
+
+`label-sheet` runs the model on the sample outside the holdout and writes
+`data/labels.xlsx`. With the Batch API this can take up to an hour; `--live` is faster at
+twice the price.
+
+Then **you** label, in Excel or Google Sheets. The `guide` tab explains each column:
+
+- `mode = correct` rows hold the model's answers: check each one and fix what is wrong.
+- `mode = blind` rows are empty on purpose. Label them from the document alone. Do not
+  ask Claude to fill them: they measure the final program, and model-written labels there
+  would measure the model against itself.
+- A blank cell means the document gives no answer. For a passage, paste the sentence from
+  the text file; the harness finds its position.
+- Set `reviewed` to `yes` on each finished row, or `skip` with a reason in `notes`.
+
+```
+doc-harness import-labels
+```
+
+It lists every problem at once and writes `data/labels.jsonl` only when all of them pass.
+Run it as often as you like while labeling. Commit the sheet and the labels as you go --
+they are the most expensive thing in the repo.
+
+### 7. Audit the labels and write the rules
+
+```
+doc-harness audit-labels
+```
+
+Then write `data/annotation_rules.md`: for each task, the rule you actually applied and the
+edge cases you decided. `compile` refuses to run without it. Commit.
+
+### 8. Make the splits
+
+```
+doc-harness make-splits
+```
+
+The holdout drawn in step 6 is kept; the rest is divided into train and validation. For
+every class below the support floor, the command stops and asks what to do, and records
+your answer in `decisions.md`. **Commit `data/splits.json` straight away** -- splits are
+made once, and the committed file is the proof they were not changed later.
+
+### 9. Record the baselines
+
+Write two or three hand-picked examples into `programs/baseline.py` (`hand_written_demos`)
+-- the hard cases and rare classes, not the first rows. Then:
+
+```
+doc-harness run-baseline
+```
+
+This records zero-shot, hand-written few-shot and `BootstrapFewShot`, in
+`runs/baseline_report.md`. A task near zero on every baseline is a problem with the task,
+the text or the matcher, and optimization will not fix it: fix it before moving on.
+
+### 10. Optimize, within the budget
+
+```
+doc-harness compile --variable "MIPROv2 light, 4 demos"
+```
+
+One experiment per run, each changing one thing, named by `--variable`. The best one is
+pinned as the champion, and later experiments start from it. `optimization.max_experiments`
+in `config.yaml` caps the number of runs; it is set before starting, not raised because
+the results look close. Read the per-task numbers and `failures.md` after each run, not only
+the aggregate. `doc-harness adjudicate <run_id>` lists borderline matches for you to check.
+
+### 11. Measure the holdout, once
+
+```
+doc-harness holdout
+```
+
+This scores the champion on the holdout and writes a lock; a second run is refused unless
+overridden, and the override goes into the report. Read the gap between validation and
+holdout against the table in `docs/protocol.md` and act on it. The reading is recorded in
+`decisions.md`; commit it.
+
+### 12. Run production
+
+```
+doc-harness production
+```
+
+Runs the champion over every document, through the Batch API, checkpointed so an
+interrupted run resumes without paying again. Output goes to
+`runs/production/outputs.jsonl`, and `qa_report.md` checks coverage, parse failures,
+class shifts and null rates, and lists documents for a human spot check. The command
+fails if a check fails.
+
+### 13. Close
+
+```
+doc-harness close --labeling-hours 14 --cost-usd 38.50
+```
+
+Writes `REPORT.md`. Commit it and push. To add the project to the shared record across
+projects, pass `--ledger` with the path to `ledger.csv` in a harness checkout, and commit
+that there.
+
+### Moving a project to a newer harness
+
+Read the version's entry in `CHANGELOG.md` first: some releases change how answers are
+scored, and numbers from different versions do not compare. Then change the tag in
+`pyproject.toml`, run `make lock && make sync`, follow the entry's upgrade notes, and commit.
 
 ## What is load-bearing
 
@@ -115,8 +309,8 @@ index, and `--pin-mode path --harness-path ...` points at a local checkout for h
 development. Hashes and git pins are mutually exclusive -- pip cannot hash a checkout -- so
 a git-pinned project locks without `--generate-hashes` and relies on the tag for exactness.
 
-Cutting a release means bumping `version` in `pyproject.toml` and pushing a matching
-`vX.Y.Z` tag. Projects scaffolded before the bump keep pointing at their own tag.
+Cutting a release means bumping `version` in `pyproject.toml`, updating the tag everywhere
+it appears in this README, and pushing a matching `vX.Y.Z` tag. Projects scaffolded before the bump keep pointing at their own tag.
 
 ## Known deviations from the brief
 
