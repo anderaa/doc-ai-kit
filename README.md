@@ -104,11 +104,11 @@ end up nested inside this repo:
 
 ```
 cd ~/Projects
-pipx run --spec "git+https://github.com/anderaa/doc-harness.git@v0.1.6" newproject "Acme Contracts"
+pipx run --spec "git+https://github.com/anderaa/doc-harness.git@v0.1.7" newproject "Acme Contracts"
 cd acme-contracts
 git init
 git add -A
-git commit -m "Start project from doc-harness v0.1.6"
+git commit -m "Start project from doc-harness v0.1.7"
 gh repo create acme-contracts --private --source=. --remote=origin --push
 ```
 
@@ -366,7 +366,7 @@ examples/adversarial/  the matcher check: does scoring hold up on documents buil
 tag, because that works today without publishing anything:
 
 ```
-doc-harness @ git+https://github.com/anderaa/doc-harness.git@v0.1.6
+doc-harness @ git+https://github.com/anderaa/doc-harness.git@v0.1.7
 ```
 
 `--pin-mode pypi` switches to `doc-harness==X.Y.Z` once the package is published to an

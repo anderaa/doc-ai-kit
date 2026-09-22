@@ -4,7 +4,7 @@ Projects pin one exact harness version. Read the entry for a version before movi
 project onto it: some releases change how answers are scored, and a number measured under
 one version is not comparable with a number measured under another.
 
-## Unreleased
+## 0.1.7
 
 **Changes the cached text of any document with a scanned page**, and so can change scores on
 those documents. Documents whose pages all have a text layer are unaffected.
