@@ -39,28 +39,26 @@ def corpus(tmp_path: Path) -> Path:
 
 
 def test_extracts_text_and_pages(corpus: Path) -> None:
-    config = ExtractionConfig(ocr_fallback=False)
+    config = ExtractionConfig()
     document = extract_document(corpus / "doc_a.pdf", config)
     assert document.doc_id == "doc_a"
     assert document.page_count == 2
     assert "California" in document.text
     assert document.extractor == "pymupdf"
-    assert document.ocr is False
-    assert document.ocr_needed is False
+    assert document.thin_pages == document.unread_pages == document.transcribed_pages == 0
     assert document.char_count == len(document.text)
 
 
 def test_thin_text_layer_is_flagged(corpus: Path) -> None:
     """A scanned document must be flagged, never quietly passed through as near-empty."""
-    config = ExtractionConfig(ocr_fallback=False, ocr_chars_per_page=100)
-    document = extract_document(corpus / "doc_scan.pdf", config)
-    assert document.ocr_needed is True
-    assert document.ocr is False
+    document = extract_document(corpus / "doc_scan.pdf", ExtractionConfig())
+    assert document.thin_pages == document.unread_pages == 1
+    assert document.transcribed_pages == 0
     assert document.chars_per_page < 100
 
 
 def test_fallback_extractor_is_recorded(corpus: Path) -> None:
-    config = ExtractionConfig(extractor="pdfplumber", fallback_extractor=None, ocr_fallback=False)
+    config = ExtractionConfig(extractor="pdfplumber", fallback_extractor=None)
     document = extract_document(corpus / "doc_a.pdf", config)
     assert document.extractor == "pdfplumber"
     assert "California" in document.text
@@ -91,7 +89,7 @@ def test_truncation_is_a_no_op_when_it_fits() -> None:
 def test_corpus_writes_cache_and_manifest(tmp_path: Path, corpus: Path) -> None:
     text_dir = tmp_path / "text"
     manifest = tmp_path / "extraction_manifest.csv"
-    config = ExtractionConfig(ocr_fallback=False)
+    config = ExtractionConfig()
     documents = extract_corpus(corpus, text_dir, manifest, config)
 
     assert [d.doc_id for d in documents] == ["doc_a", "doc_b", "doc_scan"]
@@ -101,7 +99,8 @@ def test_corpus_writes_cache_and_manifest(tmp_path: Path, corpus: Path) -> None:
         rows = {row["doc_id"]: row for row in csv.DictReader(handle)}
     assert set(rows) == {"doc_a", "doc_b", "doc_scan"}
     assert rows["doc_a"]["page_count"] == "2"
-    assert rows["doc_scan"]["ocr_needed"] == "True"
+    assert rows["doc_scan"]["unread_pages"] == "1"
+    assert rows["doc_a"]["unread_pages"] == "0"
     assert rows["doc_a"]["stratum"] == "random"
     assert rows["doc_a"]["extractor"] == "pymupdf"
 
@@ -110,7 +109,7 @@ def test_corpus_reuses_the_cache(tmp_path: Path, corpus: Path) -> None:
     """Re-running extraction must reuse cached text, so downstream metrics stay comparable."""
     text_dir = tmp_path / "text"
     manifest = tmp_path / "extraction_manifest.csv"
-    config = ExtractionConfig(ocr_fallback=False)
+    config = ExtractionConfig()
     extract_corpus(corpus, text_dir, manifest, config)
     marker = "CACHED SENTINEL"
     (text_dir / "doc_a.md").write_text(marker, encoding="utf-8")
@@ -125,9 +124,7 @@ def test_corpus_reuses_the_cache(tmp_path: Path, corpus: Path) -> None:
 def test_strata_are_recorded(tmp_path: Path, corpus: Path) -> None:
     text_dir = tmp_path / "text"
     manifest = tmp_path / "extraction_manifest.csv"
-    documents = extract_corpus(
-        corpus, text_dir, manifest, ExtractionConfig(ocr_fallback=False), strata={"doc_b": "keyword"}
-    )
+    documents = extract_corpus(corpus, text_dir, manifest, ExtractionConfig(), strata={"doc_b": "keyword"})
     assert next(d for d in documents if d.doc_id == "doc_b").stratum == "keyword"
 
 
@@ -140,14 +137,53 @@ def test_empty_directory_fails_loudly(tmp_path: Path) -> None:
 
 def test_missing_cached_text_fails_loudly(tmp_path: Path, corpus: Path) -> None:
     text_dir = tmp_path / "text"
-    extract_corpus(corpus, text_dir, tmp_path / "m.csv", ExtractionConfig(ocr_fallback=False))
+    extract_corpus(corpus, text_dir, tmp_path / "m.csv", ExtractionConfig())
     with pytest.raises(FileNotFoundError, match="no cached text for 1 document"):
         load_texts(text_dir, ["doc_a", "does_not_exist"])
 
 
 def test_load_texts_returns_every_requested_document(tmp_path: Path, corpus: Path) -> None:
     text_dir = tmp_path / "text"
-    extract_corpus(corpus, text_dir, tmp_path / "m.csv", ExtractionConfig(ocr_fallback=False))
+    extract_corpus(corpus, text_dir, tmp_path / "m.csv", ExtractionConfig())
     texts = load_texts(text_dir, ["doc_a", "doc_b"])
     assert set(texts) == {"doc_a", "doc_b"}
     assert "California" in texts["doc_a"]
+
+
+def test_removed_ocr_settings_say_what_replaced_them() -> None:
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="ocr_chars_per_page -> transcription.min_chars_per_page"):
+        ExtractionConfig.model_validate({"ocr_fallback": True, "ocr_chars_per_page": 100})
+
+
+def test_an_unquoted_off_means_off() -> None:
+    """YAML reads `mode: off` as false."""
+    assert ExtractionConfig.model_validate({"transcription": {"mode": False}}).transcription.mode == "off"
+
+
+def test_transcription_model_must_be_claude() -> None:
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="must be an anthropic/ model"):
+        ExtractionConfig.model_validate({"transcription": {"model": "openai/gpt-x"}})
+
+
+def test_manifests_from_before_transcription_still_load(tmp_path: Path, corpus: Path) -> None:
+    """A project upgraded from 0.1.6 keeps its cache; a flagged document is retried once a model is set."""
+    text_dir = tmp_path / "text"
+    manifest = tmp_path / "m.csv"
+    extract_corpus(corpus, text_dir, manifest, ExtractionConfig())
+    old_columns = (
+        "doc_id,source_path,page_count,char_count,chars_per_page,extractor,"
+        "ocr,ocr_needed,truncated,original_char_count,stratum\n"
+    )
+    rows = [
+        f"doc_a,{corpus}/doc_a.pdf,2,10,5.0,pymupdf,False,False,False,10,random",
+        f"doc_b,{corpus}/doc_b.pdf,1,10,10.0,ocr,True,True,False,10,random",
+        f"doc_scan,{corpus}/doc_scan.pdf,1,1,1.0,pymupdf,False,True,False,1,random",
+    ]
+    manifest.write_text(old_columns + "\n".join(rows) + "\n", encoding="utf-8")
+    documents = {d.doc_id: d for d in extract_corpus(corpus, text_dir, manifest, ExtractionConfig())}
+    assert documents["doc_b"].transcription_model == "tesseract" and documents["doc_b"].unread_pages == 0
+    assert documents["doc_scan"].unread_pages == 1

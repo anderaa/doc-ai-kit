@@ -37,9 +37,11 @@ class is failing. See the `task-types` skill.
 Validation and production read the same cached text, because metrics computed on one
 rendering of a document do not transfer to another.
 
-Documents with a thin text layer are flagged. That flag matters twice: once in error analysis,
-where it explains a task that scores zero, and once in production QA, where those documents
-are routed to human review.
+Pages with no usable text layer -- scans -- are transcribed by Claude from an image of the
+page, once `extraction.transcription.model` is set. Pages that still have no complete text
+are counted in the manifest. That count matters twice: once in error analysis, where it
+explains a task that scores zero, and once in production QA, where those documents are
+routed to human review.
 
 Declare truncation once, in `config.yaml`. Text truncated differently in validation and
 production makes the validation numbers describe a system that was never shipped.
@@ -140,7 +142,7 @@ not ready. Class distribution and null rates in particular usually mean the corp
 from the labeled sample in a way nobody noticed -- which is worth knowing before anyone quotes
 a number.
 
-Human review gets five routes: OCR'd, truncated, nulls on usually-answered tasks,
+Human review gets five routes: transcribed or unread pages, truncated, nulls on usually-answered tasks,
 low-confidence, and a random slice. The random slice stays. The other four select documents
 that are already suspect, so a quality estimate built on them alone reads worse than the
 corpus really is.

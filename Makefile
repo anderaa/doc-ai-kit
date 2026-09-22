@@ -4,7 +4,7 @@
 
 lock:
 	pip-compile --quiet --generate-hashes --strip-extras --output-file=requirements.txt pyproject.toml
-	pip-compile --quiet --generate-hashes --strip-extras --extra=dev --extra=ocr \
+	pip-compile --quiet --generate-hashes --strip-extras --extra=dev \
 		--output-file=requirements-dev.txt pyproject.toml
 
 sync:

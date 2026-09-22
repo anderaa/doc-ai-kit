@@ -346,10 +346,11 @@ def test_ground_truth_is_committed_and_documents_are_not(project: Path, tmp_path
         "data/annotation_rules.md",
         "data/pdfs/a.pdf",
         "data/text/a.md",
+        "data/transcripts/a/page-0001.json",
         "data/~$labels.xlsx",
     ]
     result = subprocess.run(
         ["git", "-C", str(project), "check-ignore", "--no-index", *paths], capture_output=True, text=True
     )
     ignored = set(result.stdout.split())
-    assert ignored == {"data/pdfs/a.pdf", "data/text/a.md", "data/~$labels.xlsx"}
+    assert ignored == {"data/pdfs/a.pdf", "data/text/a.md", "data/transcripts/a/page-0001.json", "data/~$labels.xlsx"}

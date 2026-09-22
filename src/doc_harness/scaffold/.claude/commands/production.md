@@ -63,7 +63,7 @@ checkpoints, so only the failed documents are re-run.
 
 ## Human review routes
 
-OCR'd documents, truncated documents, nulls on usually-answered tasks, low-confidence cases,
+Documents with transcribed or unread pages, truncated documents, nulls on usually-answered tasks, low-confidence cases,
 **plus a random slice**. The random slice is not optional: the first four routes select
 documents that are already suspect, so a quality estimate built on them alone is biased and
 reads worse than the corpus really is.

@@ -29,7 +29,7 @@ from reportlab.lib.pagesizes import LETTER
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
-from doc_harness.config import ExtractionConfig
+from doc_harness.config import ExtractionConfig, TranscriptionConfig
 from doc_harness.dataset import LabelRecord, write_labels
 from doc_harness.extract import extract_corpus
 
@@ -586,7 +586,7 @@ def generate(project_dir: Path, count: int = 24) -> list[Document]:
     for document in documents:
         render_pdf(document, pdf_dir)
     extracted = extract_corpus(
-        pdf_dir, data / "text", data / "extraction_manifest.csv", ExtractionConfig(ocr_fallback=False), force=True
+        pdf_dir, data / "text", data / "extraction_manifest.csv", ExtractionConfig(transcription=TranscriptionConfig(mode="off")), force=True
     )
     texts = {item.doc_id: item.text for item in extracted}
 

@@ -118,7 +118,7 @@ the tag it was run from. It does not install anything, call a model, or set up g
 
 Keep the repo private. What it holds -- labels, decisions, task definitions -- describes
 the client's documents. The documents themselves are never committed: `.gitignore` leaves
-out `data/pdfs/` and `data/text/`. `runs/` is left out too, so run results and the holdout
+out `data/pdfs/`, `data/text/` and `data/transcripts/`. `runs/` is left out too, so run results and the holdout
 lock stay on the machine that made them.
 
 ### 2. Set up the environment
@@ -169,8 +169,11 @@ Anthropic console.
 doc-harness extract
 ```
 
-Text is cached in `data/text/` and read by every later step. Documents with a thin text
-layer are flagged; decide deliberately whether to turn on OCR (the `ocr` extra).
+Text is cached in `data/text/` and read by every later step. Scanned pages have no text
+layer, so they are sent to Claude as images and transcribed, page by page, once
+`extraction.transcription.model` is set in `config.yaml`. Until then `extract` lists the
+documents with unread pages; set the model and run `extract` again, and only those are
+redone. Open a few cached texts to check them, especially transcribed ones.
 
 ### 6. Label
 
@@ -316,6 +319,10 @@ failure is silent -- the numbers keep going up while the measurement stops meani
   path at the point of sending, and replies go through the live path's own parser, so batching
   halves the price and changes nothing else. Batch ids are saved before any waiting, so an
   interrupted run collects what it paid for instead of paying again.
+- **Scanned pages are read, page by page.** A page with no text layer is sent to Claude as
+  an image and transcribed into the text cache in place; a page still unread is counted and
+  routed to review. Judged on a whole-document average instead, a report with a few scanned
+  pages of accounts passes with those pages blank.
 - **Every run saves its predictions.** Fixing a matcher and re-measuring costs nothing
   (`doc-harness rescore`), so nobody is tempted to leave the bug in to avoid paying again.
 - **The holdout is drawn before any model runs, and labeled blind.** Labeling happens in a
@@ -335,6 +342,7 @@ src/doc_harness/
   metric.py       DSPy metric + GEPA feedback variant
   evaluate.py     dspy.Evaluate wrapper -> metrics.json, failures.md
   extract.py      pdf -> text cache
+  transcribe.py   scanned pages -> text, by Claude
   splits.py       stratification, enrichment strata, the support floor
   labeling.py     the labeling sample, the spreadsheet, reading labels back
   optimize.py     optimizer runs, leaderboard, budget enforcement
@@ -374,3 +382,12 @@ it appears in this README, and pushing a matching `vX.Y.Z` tag. Projects scaffol
 **pyenv and pip-tools, not uv.** BUILD.md §9 assumes `uv tool install` / `uvx`. The harness
 locks with `pip-compile` and projects use a pyenv virtualenv instead. Nothing else changes:
 the pin is still exact and the lock is still committed.
+
+**Claude transcribes scanned pages, not an OCR engine, and decides page by page.** BUILD.md
+§6 asks for an OCR fallback when a document's characters per page fall below about 100.
+The harness first shipped Tesseract on that whole-document average. The average missed
+the common case of a mostly typed document with a few scanned pages, and Tesseract loses
+which row a number in a table belongs to. Pages are now judged one by one, and a thin page
+is sent to Claude as an image; the transcription goes into the text cache, so everything
+downstream is still text only, as §15 intended. The manifest's OCR flag became per-page
+counts (`thin_pages`, `transcribed_pages`, `unread_pages`), and the triage route follows them.

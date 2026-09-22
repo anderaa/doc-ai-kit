@@ -49,8 +49,9 @@ In this order, because each step is cheaper than the next:
 
 1. **Is the matcher right?** Look at the normalized gold and prediction in the failure lines.
    If they look the same to you but score as wrong, it is a normalizer gap.
-2. **Is the answer in the text?** Check `extraction_manifest.csv` for the OCR and truncation
-   flags on the failing documents. A scanned or truncated document cannot be fixed by a prompt.
+2. **Is the answer in the text?** Check `extraction_manifest.csv` for unread pages,
+   transcribed pages and truncation on the failing documents. Open the cached text in
+   `data/text/`: a page that is missing, cut off or misread cannot be fixed by a prompt.
 3. **Is the question unambiguous?** Read `annotation_rules.md`. If the rule needed a paragraph
    of edge cases, the question in `tasks.yaml` probably does not carry them.
 4. **Only then**, is it a prompt problem?

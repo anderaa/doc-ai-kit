@@ -106,17 +106,73 @@ class TruncationConfig(_Strict):
     head_share: float = Field(default=0.7, gt=0.0, lt=1.0)
 
 
+class TranscriptionConfig(_Strict):
+    """How pages with no usable text layer are read: Claude transcribes an image of the page.
+
+    Like the task model, the transcription model has no default. A corpus of clean PDFs
+    never needs it, and a harness that picks a model for you is one that spends money for you.
+    """
+
+    # thin_pages: only pages whose text layer is below min_chars_per_page.
+    # all_pages: every page, for PDFs whose text layer exists but is garbage (a bad earlier OCR).
+    # off: never; thin pages are flagged and left as they are
+    mode: Literal["thin_pages", "all_pages", "off"] = "thin_pages"
+    # anthropic/<model>, in the same form as models.task
+    model: str | None = None
+    # below this many characters, a page's text layer is treated as missing
+    min_chars_per_page: int = Field(default=100, ge=0)
+    # the longer edge of the page image sent to Claude; larger reads small print better and costs more
+    max_image_px: int = Field(default=2000, ge=400, le=8000)
+    # a dense page of small print runs to a few thousand tokens
+    max_tokens: int = Field(default=8192, ge=256)
+    num_threads: int = Field(default=4, ge=1)
+    max_retries: int = Field(default=4, ge=0)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _unquoted_off(cls, data: Any) -> Any:
+        # YAML reads a bare `mode: off` as the boolean false
+        if isinstance(data, Mapping) and data.get("mode") is False:
+            return {**data, "mode": "off"}
+        return data
+
+    @model_validator(mode="after")
+    def _model_is_claude(self) -> TranscriptionConfig:
+        if self.model is not None and not self.model.startswith("anthropic/"):
+            raise ValueError(f"extraction.transcription.model must be an anthropic/ model, not {self.model!r}")
+        return self
+
+
+# the Tesseract settings removed in 0.1.7, and what replaced each
+_REMOVED_OCR_KEYS = {
+    "ocr_fallback": "transcription.mode",
+    "ocr_chars_per_page": "transcription.min_chars_per_page",
+    "ocr_extractor": "transcription (Claude reads the page image)",
+    "ocr_language": "nothing: Claude reads any language",
+}
+
+
 class ExtractionConfig(_Strict):
     """How PDFs become text."""
 
     extractor: str = "pymupdf"
     fallback_extractor: str | None = "pdfplumber"
-    ocr_fallback: bool = True
-    # below this many characters per page, the text layer is treated as missing
-    ocr_chars_per_page: int = Field(default=100, ge=0)
-    ocr_extractor: str = "ocr"
-    ocr_language: str = "eng"
+    transcription: TranscriptionConfig = TranscriptionConfig()
     truncation: TruncationConfig = TruncationConfig()
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_removed_ocr_settings(cls, data: Any) -> Any:
+        # named rather than rejected as unknown, so an upgraded project is told what to change
+        if isinstance(data, Mapping):
+            removed = [key for key in _REMOVED_OCR_KEYS if key in data]
+            if removed:
+                replacements = "; ".join(f"{key} -> {_REMOVED_OCR_KEYS[key]}" for key in removed)
+                raise ValueError(
+                    "Tesseract OCR was removed in doc-harness 0.1.7; pages without a text layer are now "
+                    f"transcribed by Claude. Replace: {replacements}. See the 0.1.7 entry in CHANGELOG.md"
+                )
+        return data
 
 
 class SplitConfig(_Strict):

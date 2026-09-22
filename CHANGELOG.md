@@ -4,6 +4,48 @@ Projects pin one exact harness version. Read the entry for a version before movi
 project onto it: some releases change how answers are scored, and a number measured under
 one version is not comparable with a number measured under another.
 
+## Unreleased
+
+**Changes the cached text of any document with a scanned page**, and so can change scores on
+those documents. Documents whose pages all have a text layer are unaffected.
+
+Upgrading a project:
+
+- **config.yaml must change.** Delete `ocr_fallback`, `ocr_chars_per_page`, `ocr_extractor` and
+  `ocr_language` from `extraction`, and add a `transcription` block (see a new project's
+  `config.yaml`). A config that still has them is refused, with a message naming each
+  replacement. To transcribe, set `extraction.transcription.model`, e.g.
+  `anthropic/claude-sonnet-5`.
+- **Re-lock after moving the pin** (`make lock && make sync`): the `ocr` extra is gone, and so
+  are `pytesseract` and `pdf2image`.
+- Add `data/transcripts/` to the project's `.gitignore`. It holds the documents' text.
+- The existing text cache and manifest are kept. A document Tesseract read keeps its text and
+  is marked as transcribed by `tesseract`. One flagged but never read is transcribed on the
+  next `extract` once a model is set. To have Claude re-read Tesseract's documents, run
+  `extract --force`, then check any span labels on them: the text they point into changes.
+
+Changes:
+
+- **Tesseract is gone; Claude transcribes scanned pages.** A page is sent to
+  `extraction.transcription.model` as an image when its text layer is below
+  `min_chars_per_page`, and the transcription is spliced into the cached text in that page's
+  place. Decided per page: the whole-document average let a mostly typed report through
+  with its scanned pages blank and unflagged. Tables come back row by row, so a number stays
+  with its row. Thinking is switched off for these requests: copying needs no reasoning and
+  thinking is billed as output.
+  - `mode: all_pages` transcribes every page, for PDFs whose text layer is garbage from an
+    earlier OCR. `mode: off` never sends anything and only counts thin pages.
+  - Cached per page in `data/transcripts/`, keyed on the PDF's contents, the model and the
+    prompt, so nothing is paid for twice. A failed page is not cached and is retried.
+  - With no model set, thin pages are counted and listed. Setting one later redoes only
+    those documents, without `--force`.
+  - Measured on a skewed, speckled scan of an accounts table: every figure transcribed
+    correctly and in its row, for 3,898 input and 308 output tokens.
+- The manifest's `ocr` and `ocr_needed` columns become `thin_pages`, `transcribed_pages`,
+  `unread_pages` and `transcription_model`. The production triage route `ocr` becomes
+  `transcribed_or_unread`.
+- `extract` reports the pages transcribed and the tokens spent on them.
+
 ## 0.1.6
 
 **Does not change scores or prompts.** Adds a labeling step before `audit-labels`; projects

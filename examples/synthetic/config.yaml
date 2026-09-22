@@ -10,8 +10,9 @@ models:
 extraction:
   extractor: pymupdf
   fallback_extractor: pdfplumber
-  ocr_fallback: false
-  ocr_chars_per_page: 100
+  # generated PDFs always have a text layer
+  transcription:
+    mode: "off"
   truncation:
     max_chars: null
     strategy: head

@@ -3,6 +3,7 @@
 # labels.jsonl, splits.json, annotation_rules.md and the extraction manifest
 data/pdfs/
 data/text/
+data/transcripts/
 # the lock file Excel leaves beside a sheet while it is open
 data/~$*
 runs/

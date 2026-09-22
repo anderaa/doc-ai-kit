@@ -196,13 +196,28 @@ def extract(project: Project, force: bool) -> None:
         project.config.extraction,
         force=force,
     )
-    flagged = [document.doc_id for document in documents if document.ocr_needed]
     click.echo(f"Extracted {len(documents)} document(s) to {project.data / 'text'}.")
+    transcribed = sum(document.transcribed_pages for document in documents)
+    if transcribed:
+        spent_in = sum(document.transcription_tokens[0] for document in documents)
+        spent_out = sum(document.transcription_tokens[1] for document in documents)
+        click.echo(
+            f"{transcribed} page(s) with no usable text layer were transcribed by "
+            f"{project.config.extraction.transcription.model}; this run spent {spent_in:,} input and "
+            f"{spent_out:,} output tokens on it (cached pages cost nothing)."
+        )
+    flagged = [document for document in documents if document.unread_pages]
     if flagged:
         click.echo(
-            f"{len(flagged)} document(s) had a thin or missing text layer: {', '.join(flagged)}.\n"
+            f"{len(flagged)} document(s) still have pages with no usable text: "
+            f"{', '.join(f'{d.doc_id} ({d.unread_pages})' for d in flagged)}.\n"
             "A task that scores zero on these is an extraction problem, not a prompt problem."
         )
+        if project.config.extraction.transcription.model is None:
+            click.echo(
+                "Set extraction.transcription.model in config.yaml (e.g. anthropic/claude-sonnet-5) and run "
+                "extract again: only these documents are redone."
+            )
 
 
 @cli.command("sample-labels")

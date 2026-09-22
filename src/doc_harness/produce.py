@@ -453,12 +453,12 @@ def triage(
     :param registry: The parsed tasks.yaml
     :param config: The project configuration
     :param outcomes: The production outcomes
-    :param manifest_path: extraction_manifest.csv, for the OCR and truncation routes
+    :param manifest_path: extraction_manifest.csv, for the transcription and truncation routes
     :param seed: Fixed so the random slice is reproducible
     :returns: Route name to document ids
     """
     routes: dict[str, list[str]] = {
-        "ocr": [],
+        "transcribed_or_unread": [],
         "truncated": [],
         "nulls_on_answered_tasks": [],
         "low_confidence": [],
@@ -472,8 +472,9 @@ def triage(
             for row in csv.DictReader(handle):
                 if row["doc_id"] not in produced_ids:
                     continue
-                if row.get("ocr") == "True" or row.get("ocr_needed") == "True":
-                    routes["ocr"].append(row["doc_id"])
+                # text read from a page image, or missing, is where extraction errors hide
+                if int(row.get("transcribed_pages") or 0) or int(row.get("unread_pages") or 0):
+                    routes["transcribed_or_unread"].append(row["doc_id"])
                 if row.get("truncated") == "True":
                     routes["truncated"].append(row["doc_id"])
 

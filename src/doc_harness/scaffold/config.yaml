@@ -22,10 +22,19 @@ models:
 extraction:
   extractor: pymupdf
   fallback_extractor: pdfplumber
-  ocr_fallback: true
-  # below this many characters per page, the text layer is treated as missing
-  ocr_chars_per_page: 100
-  ocr_language: eng
+  # pages with no usable text layer -- scans -- are read by Claude from an image of the page
+  transcription:
+    # thin_pages: only pages below min_chars_per_page. all_pages: every page, for PDFs whose
+    # text layer is garbage from a bad earlier OCR. off: never; thin pages are only flagged
+    mode: thin_pages
+    # no default, as with models.task: a corpus of clean PDFs never needs it. Pages that need
+    # it are flagged by extract until it is set, and set later, only those documents are redone
+    model: null
+    min_chars_per_page: 100
+    # the longer edge of the page image; larger reads small print better and costs more
+    max_image_px: 2000
+    max_tokens: 8192
+    num_threads: 4
   truncation:
     # declared once and applied identically in validation and production; null means no limit
     max_chars: null

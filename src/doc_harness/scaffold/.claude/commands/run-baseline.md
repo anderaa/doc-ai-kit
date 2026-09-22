@@ -36,7 +36,7 @@ A task scoring near zero at **every** baseline is an upstream problem, and the r
 explicitly. Check, in this order:
 
 1. Is the answer present in the extracted text at all? Look at `extraction_manifest.csv` for
-   OCR and truncation flags.
+   unread or transcribed pages, and truncation.
 2. Is the question unambiguous? Look at `annotation_rules.md` and at whether two people would
    label it the same way.
 3. Is the matcher right? A broken matcher makes a correct answer score as wrong, and sends

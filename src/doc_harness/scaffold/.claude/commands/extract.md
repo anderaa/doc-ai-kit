@@ -26,19 +26,33 @@ doc-harness extract
 
 Writes `data/text/{doc_id}.md` and `data/extraction_manifest.csv`.
 
-## The OCR flag
+## Scanned pages
 
-When a document's text layer falls below `extraction.ocr_chars_per_page` characters per
-page, it is treated as missing: OCR runs if enabled, and either way the document is flagged
-in the manifest.
+A page whose text layer has fewer than `extraction.transcription.min_chars_per_page`
+characters -- usually a scan -- is rendered to an image and transcribed by Claude, and the
+transcription goes into the cached text in that page's place. This is decided **page by
+page**: a report with twenty typed pages and five scanned pages of accounts gets those five
+read, rather than passing on a healthy-looking average with them blank.
 
-That flag has to reach two places later. In error analysis it explains a task that scores
-zero on those documents -- no prompt recovers information that is not in the text. In
-production QA it routes the document to human review.
+It needs `extraction.transcription.model` set in `config.yaml`, e.g.
+`anthropic/claude-sonnet-5`. There is no default, because a corpus of clean PDFs never needs
+it. Until it is set, `extract` lists the documents with unread pages; set it and run
+`extract` again, and only those documents are redone. Transcriptions are cached per page in
+`data/transcripts/`, so nothing is paid for twice. A page costs roughly 4,000 input tokens,
+depending on `max_image_px`.
 
-If the command reports flagged documents and OCR is disabled, decide deliberately: enable
-the `ocr` extra, or accept that those documents will not be answerable and say so in the
-report.
+`transcription.mode: all_pages` transcribes every page. Use it when PDFs carry a text layer
+that is garbage -- left by a bad earlier OCR -- which the character count cannot detect.
+Sample a few cached texts after extracting a new corpus to find out.
+
+The manifest records, per document, `thin_pages`, `transcribed_pages` and `unread_pages`
+(pages still without complete text: not transcribed, failed, or cut off). Those counts
+reach two places later. In error analysis they explain a task that scores zero -- no prompt
+recovers information that is not in the text. In production QA they route the document to
+human review, because text read from an image can still be misread.
+
+If documents still have unread pages after transcription, decide deliberately: look at the
+pages, or accept that they will not be answerable and say so in the report.
 
 ## Truncation
 

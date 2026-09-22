@@ -27,7 +27,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-ocr = ["pytesseract>=0.3.10", "pdf2image>=1.17"]
 dev = [
     "pytest>=8.2",
     "ruff>=0.5",
@@ -68,7 +67,7 @@ warn_unreachable = true
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["dspy.*", "json_repair.*", "regex.*", "pymupdf", "pdfplumber.*", "pytesseract.*", "pdf2image.*"]
+module = ["dspy.*", "json_repair.*", "regex.*", "pymupdf", "pdfplumber.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

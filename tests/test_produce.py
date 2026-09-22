@@ -191,7 +191,7 @@ def test_null_rate_gate_catches_a_program_that_gave_up(toy_registry: Registry, t
 def test_triage_keeps_the_random_slice(tmp_path: Path, toy_registry: Registry) -> None:
     manifest = tmp_path / "extraction_manifest.csv"
     manifest.write_text(
-        "doc_id,ocr,ocr_needed,truncated\n" "d0,True,True,False\n" "d1,False,False,True\n" "d2,False,False,False\n",
+        "doc_id,transcribed_pages,unread_pages,truncated\n" "d0,2,0,False\n" "d1,0,0,True\n" "d2,0,0,False\n",
         encoding="utf-8",
     )
     outcomes = [
@@ -201,7 +201,7 @@ def test_triage_keeps_the_random_slice(tmp_path: Path, toy_registry: Registry) -
         DocumentOutcome(doc_id="d3", error="boom"),
     ]
     routes = triage(toy_registry, _config(), outcomes, manifest_path=manifest, seed=1)
-    assert routes["ocr"] == ["d0"]
+    assert routes["transcribed_or_unread"] == ["d0"]
     assert routes["truncated"] == ["d1"]
     assert routes["failed"] == ["d3"]
     assert "d2" in routes["nulls_on_answered_tasks"]
