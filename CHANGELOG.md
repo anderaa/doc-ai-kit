@@ -6,8 +6,22 @@ one version is not comparable with a number measured under another.
 
 ## Unreleased
 
-**Does not change scores or prompts.**
+**Changes scores on `extract_numeric` tasks whose answers carry a unit other than a currency or
+percent**, such as a notice period in days. Money amounts score as before. A finished run can
+be re-scored without inference: `doc-harness rescore <run_id>`.
 
+- **Units are read as words.** The unit of a number was found by deleting every digit and
+  space and then stripping a leading magnitude letter, so `1 month` had the unit `onth`,
+  `30 business days` had `usinessdays`, and `3 billion` had `illion`. The unit is now the words
+  after the number, with a magnitude removed only when it is a whole word, or failing that a
+  code written before the number (`USD 1,000`).
+- **Periods of time are recognized**: day/days, week(s), month(s)/mo, year(s)/yr fold to one
+  unit each. Business and working days stay separate from calendar days, and a month is not
+  thirty days: those remain different answers. Reported from the first real-user run, where
+  `30 day` and `30 days` scored as different units.
+- **`unit_aliases` is accepted in a numeric task's `match` block**, e.g.
+  `unit_aliases: {"sq ft": "square feet"}`. The normalizer already read it, but `tasks.yaml`
+  refused the key, so a project needing a unit of its own had to write a custom normalizer.
 - **`status` counts PDFs whatever the case of their extension.** 0.1.8 fixed extraction but
   not the count in `status`, which still matched `*.pdf` only: on CUAD it reported 199 PDFs
   where extraction reads 510. Both now use one definition of a PDF. Reported from the first

@@ -116,3 +116,28 @@ def test_fuzzy_threshold_is_monotone(theta: float) -> None:
     if theta == 1.0:
         assert not result.correct
     assert result.counted == 2 if not result.correct else result.counted == 1
+
+
+def test_unit_aliases_are_accepted_in_tasks_yaml() -> None:
+    """Reported from a real run: the normalizer read unit_aliases, but tasks.yaml refused the key."""
+    from doc_harness.metric import build_metric
+    from doc_harness.registry import Registry
+
+    registry = Registry.from_mapping(
+        {
+            "tasks": [
+                {
+                    "id": "notice",
+                    "type": "extract_numeric",
+                    "question": "Notice to stop renewal.",
+                    "match": {"matcher": "numeric", "tolerance": 0, "unit": "days", "unit_aliases": {"jours": "days"}},
+                }
+            ]
+        }
+    )
+    task = registry.by_id("notice")
+    metric = build_metric(registry)
+    assert metric.score_task(task, {"notice": "30 days"}, {"notice": "30 jours"}).correct
+    assert metric.score_task(task, {"notice": "30 days"}, {"notice": "30 day"}).correct
+    assert not metric.score_task(task, {"notice": "30 days"}, {"notice": "1 month"}).correct
+    assert not metric.score_task(task, {"notice": "30 days"}, {"notice": "30 business days"}).correct

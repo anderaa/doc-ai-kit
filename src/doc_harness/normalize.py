@@ -117,6 +117,17 @@ _CURRENCY_NAMES = {
     "pound sterling": "GBP", "pounds sterling": "GBP", "british pounds": "GBP", "gbp": "GBP",
     "yen": "JPY", "japanese yen": "JPY", "jpy": "JPY",
 }  # fmt: skip
+# periods of time, singular and plural folded together. A business day is not a calendar day,
+# and a month is not thirty days: those stay different units, and so different answers
+_TIME_UNITS = {
+    "day": "days", "days": "days", "calendar day": "days", "calendar days": "days", "d": "days",
+    "business day": "business days", "business days": "business days",
+    "working day": "business days", "working days": "business days",
+    "week": "weeks", "weeks": "weeks", "wk": "weeks", "wks": "weeks",
+    "month": "months", "months": "months", "mo": "months", "mos": "months", "calendar month": "months",
+    "calendar months": "months",
+    "year": "years", "years": "years", "yr": "years", "yrs": "years",
+}  # fmt: skip
 # a bare "dollars" says which currency family but not which member of it
 _DOLLAR_CODES = frozenset({"USD", "CAD", "AUD", "NZD", "SGD", "HKD"})
 
@@ -329,8 +340,14 @@ def person_name(value: Any, params: Mapping[str, Any]) -> str | None:
     return " ".join(tokens) or None
 
 
-def _parse_number(text: str) -> tuple[float, float] | None:
-    """Return the numeric value and any magnitude multiplier found in the text."""
+def _parse_number(text: str) -> tuple[float, float, str, str] | None:
+    """Find the number in a text, with any magnitude word written right after it.
+
+    :param text: The text, e.g. ``"$ 1.2 million"`` or ``"thirty (30) days"``
+    :returns: The number, the magnitude multiplier, the text before the number, and the text
+        after it with the magnitude word removed -- or None when there is no number. A
+        magnitude only counts as a whole word, so the ``m`` of ``months`` is not a million
+    """
     match = _NUMERIC_RE.search(text)
     if match is None:
         return None
@@ -344,8 +361,14 @@ def _parse_number(text: str) -> tuple[float, float] | None:
     for token, scale in sorted(_MAGNITUDES.items(), key=lambda item: -len(item[0])):
         if remainder.startswith(token) and (len(remainder) == len(token) or not remainder[len(token)].isalpha()):
             multiplier = scale
+            remainder = remainder[len(token) :]
             break
-    return number, multiplier
+    return number, multiplier, text[: match.start()], remainder
+
+
+def _unit_words(text: str) -> str:
+    """Trim a unit written around a number down to its words: ``") days."`` becomes ``"days"``."""
+    return collapse_whitespace(re.sub(r"^[\s.,;:()\[\]\-]+|[\s.,;:()\[\]\-]+$", "", text))
 
 
 @register_normalizer("numeric")
@@ -373,7 +396,7 @@ def numeric(value: Any, params: Mapping[str, Any]) -> Quantity | str | None:
         parsed = _parse_number(str(raw_value))
         if parsed is None:
             return collapse_whitespace(_as_text(raw_value)).casefold()
-        number, multiplier = parsed
+        number, multiplier, _before, _after = parsed
         amount, stated_unit = _split_unit_magnitude(number * multiplier, value.get("unit"))
         return Quantity(value=amount, unit=_canonical_unit(stated_unit, params))
     text = collapse_whitespace(fold_unicode(_as_text(value)))
@@ -391,15 +414,13 @@ def numeric(value: Any, params: Mapping[str, Any]) -> Quantity | str | None:
     parsed = _parse_number(text.strip("()"))
     if parsed is None:
         return text
-    number, multiplier = parsed
+    number, multiplier, before, after = parsed
     amount = number * multiplier * (-1.0 if negative else 1.0)
-    trailing = re.sub(r"[\d.,\s_()%$-]", "", text)
-    for token in _MAGNITUDES:
-        if trailing.startswith(token):
-            trailing = trailing[len(token) :]
-            break
-    if unit is None and trailing:
-        unit = trailing
+    # the words after the number are its unit ("30 days"); failing that, a code written before
+    # it ("USD 1,000"). Read as words: deleting every digit and space and then stripping a
+    # magnitude letter used to turn "1 month" into the unit "onth"
+    if unit is None:
+        unit = _unit_words(after) or _unit_words(before) or None
     return Quantity(value=amount, unit=_canonical_unit(unit, params))
 
 
@@ -445,6 +466,8 @@ def _canonical_unit(unit: Any, params: Mapping[str, Any]) -> str | None:
             return target
     if text in _CURRENCY_NAMES:
         return _CURRENCY_NAMES[text]
+    if text in _TIME_UNITS:
+        return _TIME_UNITS[text]
     if text in _CURRENCY_SYMBOLS:
         return _CURRENCY_SYMBOLS[text]
     if text in {"dollar", "dollars"}:

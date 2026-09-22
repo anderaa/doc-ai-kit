@@ -152,6 +152,8 @@ class NumericMatch(_BaseMatch):
     tolerance: float = Field(ge=0.0)
     tolerance_kind: Literal["absolute", "relative"] = "relative"
     unit: str | None = None
+    # extra spellings of a unit, mapped to its canonical form, e.g. {"sq ft": "square feet"}
+    unit_aliases: dict[str, str] = Field(default_factory=dict)
 
 
 class DateMatch(_BaseMatch):

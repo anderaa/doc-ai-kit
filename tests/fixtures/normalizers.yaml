@@ -88,6 +88,16 @@ numeric:
     - {input: "€2,000", expect: {value: 2000.0, unit: EUR}}
     - {input: "n/a", expect: null}
     - {input: "several", expect: "several"}
+    # periods, reported from a real run: "day" and "days" were different units, and a
+    # magnitude letter was stripped off the front of any unit ("1 month" had the unit "onth")
+    - {input: "30 days", expect: {value: 30.0, unit: days}}
+    - {input: "30 day", expect: {value: 30.0, unit: days}}
+    - {input: "thirty (30) days", expect: {value: 30.0, unit: days}}
+    - {input: "30 business days", expect: {value: 30.0, unit: business days}}
+    - {input: "1 month", expect: {value: 1.0, unit: months}}
+    - {input: "3 billion USD", expect: {value: 3000000000.0, unit: USD}}
+    - {input: "USD 1,000", expect: {value: 1000.0, unit: USD}}
+    - {input: "10 kg", expect: {value: 10.0, unit: kg}}
     # currency written as a word, which a model reading "1,000 dollars" will echo back
     - {input: {value: 1000, unit: "dollars"}, expect: {value: 1000.0, unit: USD}}
     - {input: {value: 1000, unit: "US dollars"}, expect: {value: 1000.0, unit: USD}}
