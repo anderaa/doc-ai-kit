@@ -60,13 +60,16 @@ The holdout therefore has to be chosen before the model runs on anything:
 
 1. `doc-harness sample-labels --count N` draws the documents to label, and the holdout among
    them, at random. No model has seen a document yet.
-2. `doc-harness label-sheet` runs the zero-shot program on the sample **outside** the holdout
-   and writes `data/labels.xlsx`: model answers to correct, and empty holdout rows to label
-   blind.
-3. Fill it in, in Excel or Google Sheets. The `guide` tab says how. A span is labeled by
-   pasting the passage; the harness finds its position.
-4. `doc-harness import-labels` checks every cell, lists every problem at once, and writes
-   `labels.jsonl` only when all of them pass. Run it as often as you like.
+2. `doc-harness label-sheet --prefill` or `--no-prefill` writes `data/labels.xlsx`: one tab,
+   one row per sampled file, one column per task, plus `notes`. With `--prefill`, rows
+   outside the holdout hold the model's answers to correct; with `--no-prefill`, every row
+   starts empty. The holdout rows start empty either way -- they are shaded -- and the model
+   is never run on them.
+3. Fill in every row, in Excel or Google Sheets. A blank cell means the document gives no
+   answer; `skip: <reason>` in `notes` sets a document aside. A span is labeled by pasting
+   the passage; the harness finds its position.
+4. `doc-harness import-labels` takes the finished sheet whole: it checks every cell, lists
+   every problem at once, and writes `labels.jsonl` only when all of them pass.
 
 Then `doc-harness audit-labels`, and write `data/annotation_rules.md`: for each task, the rule
 you actually applied and the edge cases you had to decide. It is a gate for `compile`, because

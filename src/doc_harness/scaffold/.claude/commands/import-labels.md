@@ -1,12 +1,12 @@
 ---
-description: Check the labeling sheet and write data/labels.jsonl
+description: Check the finished labeling sheet and write data/labels.jsonl
 ---
 
 # import-labels
 
 ## Entry conditions
 
-- `data/labels.xlsx` from `label-sheet`, with some rows marked `reviewed = yes`.
+- `data/labels.xlsx` from `label-sheet`, with every row finished.
 
 ## Why it exists
 
@@ -21,26 +21,32 @@ unit, spans as offsets into the extracted text.
 doc-harness import-labels
 ```
 
-`--sheet path.csv` reads a CSV export instead, for example from Google Sheets.
+`--sheet path.csv` reads a CSV export instead, e.g. from Google Sheets.
 
-Every problem in every reviewed row is listed at once: a value outside the enum, a number
-or date that will not parse, a pasted passage not found in the text, a skip with no reason,
-a sampled document with no row. **Nothing is written until all of them are fixed.**
-Warnings, such as a passage that appears twice or an unexpected unit, do not block.
+**The sheet is imported whole or not at all.** Every problem in every row is listed at
+once, and nothing is written until all of them are fixed:
 
-Each document's labeling mode comes from the plan, not from the sheet. Rows that were shown
-model answers are `corrected`; all others are `blind`. The holdout is always blind.
+- a sampled document with no row, or a row with nothing in it at all (no answer, no note);
+- a value outside a task's allowed values, or a number or date that will not parse;
+- a pasted passage that is not in the document's text;
+- a `skip:` note with no reason.
+
+Go through the list with the user. Most are typos. Warnings -- a passage that appears twice,
+an unexpected unit -- do not block, but read them.
+
+Each document's labeling mode comes from the plan, not the sheet: rows that were shown model
+answers are `corrected`; all others are `blind`. The holdout is always blind.
+
+Import again as often as needed; it replaces `labels.jsonl` from the sheet each time.
 
 ## Refusals
 
-- A document labeled before would lose its label: mark it reviewed, or pass `--force`.
+- A document labeled before would lose its label: pass `--force` if that is intended.
 - A document in `splits.json` would lose its label: always refused.
 
 ## Exit criteria
 
-- Every sampled document labeled or skipped with a reason, including the whole holdout.
-  `make-splits` refuses while a holdout document is neither, because leaving out the hard
-  ones quietly makes the holdout easier than the corpus.
+- `data/labels.jsonl` written, with every sampled document labeled or skipped with a reason.
 
 ## Next
 

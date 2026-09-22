@@ -42,14 +42,12 @@ from doc_harness.evaluate import (
     score_split,
     write_run,
 )
-from doc_harness.extract import extract_corpus, load_texts
+from doc_harness.extract import extract_corpus, load_texts, source_names
 from doc_harness.guards import GuardError, require_files
 from doc_harness.hooks import load_project_customizations
 from doc_harness.labeling import (
     PLAN_FILE,
-    REVIEWED,
     SHEET_FILE,
-    SKIPPED,
     draw_sample,
     import_rows,
     load_plan,
@@ -208,9 +206,11 @@ def extract(project: Project, force: bool) -> None:
         )
     flagged = [document for document in documents if document.unread_pages]
     if flagged:
+        shown = ", ".join(f"{d.doc_id} ({d.unread_pages})" for d in flagged[:10])
+        more = f", and {len(flagged) - 10} more" if len(flagged) > 10 else ""
         click.echo(
-            f"{len(flagged)} document(s) still have pages with no usable text: "
-            f"{', '.join(f'{d.doc_id} ({d.unread_pages})' for d in flagged)}.\n"
+            f"{len(flagged)} document(s) have scanned pages with no text yet, {sum(d.unread_pages for d in flagged)} "
+            f"page(s) in all: {shown}{more}. The unread_pages column of extraction_manifest.csv lists them all.\n"
             "A task that scores zero on these is an extraction problem, not a prompt problem."
         )
         if project.config.extraction.transcription.model is None:
@@ -266,15 +266,22 @@ def sample_labels(project: Project, count: int, holdout_share: float | None, for
 
 
 @cli.command("label-sheet")
-@click.option("--no-prefill", is_flag=True, help="Leave every row empty: label everything blind, spending nothing.")
+@click.option(
+    "--prefill/--no-prefill",
+    default=None,
+    help=(
+        "Required choice. --prefill fills rows outside the holdout with the model's answers, to correct: "
+        "faster, and it costs model calls. --no-prefill leaves every row empty, to label from scratch."
+    ),
+)
 @click.option("--live", is_flag=True, help="Prefill with live calls, not the Batch API: faster, twice the price.")
 @click.option("--force", is_flag=True, help="Rewrite an existing sheet, keeping only what has been imported.")
 @pass_project
-def label_sheet(project: Project, no_prefill: bool, live: bool, force: bool) -> None:
-    """Write data/labels.xlsx: one row per sampled document, ready to fill in.
+def label_sheet(project: Project, prefill: bool | None, live: bool, force: bool) -> None:
+    """Write data/labels.xlsx: one tab, one row per sampled document, one column per task.
 
-    Rows outside the holdout are prefilled with the model's answers, to be corrected. Holdout
-    rows are left empty, and the model is never run on them. Rows already imported keep
+    With --prefill, rows outside the holdout hold the model's answers, to be corrected. Holdout
+    rows are always empty, and the model is never run on them. Rows already imported keep
     their labels.
     """
     project.load_customizations()
@@ -290,26 +297,45 @@ def label_sheet(project: Project, no_prefill: bool, live: bool, force: bool) -> 
     labels_path = project.data / "labels.jsonl"
     records = load_labels(labels_path) if labels_path.exists() else []
     values: dict[str, dict[str, Any]] = {record.doc_id: dict(record.labels) for record in records}
-    reviewed = {record.doc_id: REVIEWED for record in records}
     notes = {record.doc_id: record.notes for record in records}
     for doc_id, reason in plan.skipped.items():
-        reviewed[doc_id] = SKIPPED
-        notes[doc_id] = reason
+        notes[doc_id] = f"skip: {reason}"
 
     to_prefill = [doc_id for doc_id in plan.to_correct if doc_id not in values and doc_id not in plan.skipped]
-    if to_prefill and not no_prefill:
+    if to_prefill and prefill is None:
+        raise click.ClickException(
+            "choose --prefill or --no-prefill. --prefill runs the model on the rows outside the holdout and "
+            "fills them in for you to correct: two to three times faster to label, and it costs model calls. "
+            "--no-prefill leaves every row empty, so every label is your own judgment from the document. "
+            "Holdout rows are empty either way."
+        )
+    if to_prefill and prefill:
         values.update(_prefill(project, plan.holdout, to_prefill, live))
         # recorded before the sheet exists: once a row shows model answers, it is labeled by correction
         plan.prefilled = sorted(set(plan.prefilled) | {doc_id for doc_id in to_prefill if doc_id in values})
         write_plan(plan_path, plan)
 
-    write_sheet(sheet_path, project.registry, plan, values, reviewed, notes, project.data / "text")
+    write_sheet(
+        sheet_path,
+        project.registry,
+        plan,
+        values,
+        notes,
+        project.data / "text",
+        file_names=source_names(project.data / "extraction_manifest.csv"),
+    )
     blank = sum(1 for doc_id in plan.to_correct if doc_id not in values and doc_id not in plan.skipped)
+    shaded = len(plan.holdout) + blank
     click.echo(
-        f"Wrote {sheet_path}: {len(plan.sampled)} row(s), {len(plan.holdout)} holdout row(s) left empty to label "
-        f"blind" + (f", {blank} other row(s) with no model answers" if blank else "") + ".\n\n"
-        f"Open it in Excel or Google Sheets and read the guide tab. Set {REVIEWED!r} on each finished row, "
-        "then run: doc-harness import-labels"
+        f"Wrote {sheet_path}: {len(plan.sampled)} row(s), one per document to label. {shaded} shaded row(s) start "
+        "empty, to label from the document alone"
+        + (
+            f"; the other {len(plan.sampled) - shaded} hold the model's answers to correct"
+            if shaded < len(plan.sampled)
+            else ""
+        )
+        + ".\n\nFill in every row in Excel or Google Sheets: a blank cell means the document gives no answer, "
+        "and a note of 'skip: <reason>' sets a document aside. Then run: doc-harness import-labels"
     )
 
 
@@ -352,10 +378,10 @@ def _prefill(project: Project, holdout: Sequence[str], doc_ids: Sequence[str], l
 @click.option("--force", is_flag=True, help="Write even though documents labeled before would lose their labels.")
 @pass_project
 def import_labels(project: Project, sheet: Path | None, force: bool) -> None:
-    """Check the sheet and write its reviewed rows to data/labels.jsonl.
+    """Check the finished sheet and write data/labels.jsonl.
 
-    Every cell of every reviewed row is checked first, and every problem is listed at once.
-    Nothing is written unless all of them pass.
+    The sheet is taken whole: every sampled document needs a finished row. Every cell is
+    checked first and every problem is listed at once; nothing is written unless all pass.
     """
     project.load_customizations()
     plan_path = project.data / PLAN_FILE
@@ -376,7 +402,7 @@ def import_labels(project: Project, sheet: Path | None, force: bool) -> None:
             click.echo(f"  - {problem}")
         raise SystemExit(1)
     if not result.records:
-        raise click.ClickException(f"no row is marked {REVIEWED!r} in the {sheet_path.name} sheet; nothing to import")
+        raise click.ClickException(f"every row of {sheet_path.name} is skipped; there is nothing to import")
 
     labels_path = project.data / "labels.jsonl"
     imported = {record.doc_id for record in result.records}
@@ -387,14 +413,14 @@ def import_labels(project: Project, sheet: Path | None, force: bool) -> None:
         if unlabeled:
             raise click.ClickException(
                 f"{len(unlabeled)} document(s) in splits.json would have no label: {', '.join(unlabeled[:10])}. "
-                f"Mark them {REVIEWED!r} in the sheet."
+                "Label them rather than skipping them."
             )
     if labels_path.exists() and not force:
         lost = sorted({record.doc_id for record in load_labels(labels_path)} - imported)
         if lost:
             raise click.ClickException(
-                f"{len(lost)} document(s) labeled before are not reviewed rows in this sheet, and would lose their "
-                f"labels: {', '.join(lost[:10])}. Mark them {REVIEWED!r}, or pass --force if that is intended."
+                f"{len(lost)} document(s) labeled before are not labeled in this sheet, and would lose their "
+                f"labels: {', '.join(lost[:10])}. Pass --force if that is intended."
             )
 
     order = {doc_id: index for index, doc_id in enumerate(plan.sampled)}
@@ -408,7 +434,6 @@ def import_labels(project: Project, sheet: Path | None, force: bool) -> None:
         f"Wrote {labels_path}: {len(result.records)} document(s), {len(result.records) - blind} corrected and "
         f"{blind} blind.\nHoldout: {holdout_done} of {len(plan.holdout)} labeled."
         + (f"\n{len(result.skipped)} skipped." if result.skipped else "")
-        + (f"\n{len(result.unreviewed)} not reviewed yet." if result.unreviewed else "")
         + "\n\nNext: doc-harness audit-labels"
     )
 

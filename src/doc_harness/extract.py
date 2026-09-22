@@ -112,6 +112,63 @@ def extract_with_pdfplumber(pdf_path: Path, config: ExtractionConfig) -> Extract
     return ExtractedText(text="\n\n".join(pages), page_count=len(pages), extractor="pdfplumber", pages=tuple(pages))
 
 
+def doc_id_from_name(file_name: str) -> str:
+    """Return the document id for a PDF's file name: the name without ``.pdf``, trimmed.
+
+    Trimmed because a spreadsheet cell loses surrounding spaces, and real corpora have names
+    like ``"Manufacturing Agreement .PDF"``. The extension is matched in any case; a name
+    given without one is taken as it is, since ``"S.A. - AGREEMENT"`` has no extension to cut.
+    """
+    name = file_name.strip()
+    if name.lower().endswith(".pdf"):
+        name = name[:-4]
+    return name.strip()
+
+
+def list_pdfs(pdf_dir: Path) -> list[Path]:
+    """Return every PDF in a directory, whatever the case of its extension.
+
+    Fails loudly if two files would share a document id, and names any other files it skips,
+    so that nothing leaves the corpus without a word.
+    """
+    files = sorted(path for path in pdf_dir.iterdir() if path.is_file() and not path.name.startswith("."))
+    pdfs = [path for path in files if path.suffix.lower() == ".pdf"]
+    skipped = [path.name for path in files if path.suffix.lower() != ".pdf"]
+    if skipped:
+        logger.warning("%d file(s) in %s are not PDFs and are skipped: %s", len(skipped), pdf_dir, ", ".join(skipped))
+    owners: dict[str, str] = {}
+    for path in pdfs:
+        doc_id = doc_id_from_name(path.name)
+        if doc_id in owners:
+            raise ValueError(f"{owners[doc_id]!r} and {path.name!r} would both be document {doc_id!r}; rename one")
+        owners[doc_id] = path.name
+    return pdfs
+
+
+def source_names(manifest_path: Path) -> dict[str, str]:
+    """Return each document's PDF file name, from the extraction manifest."""
+    return {doc_id: Path(row["source_path"]).name for doc_id, row in _load_manifest(manifest_path).items()}
+
+
+def image_coverage(pdf_path: Path) -> list[float]:
+    """Return, per page, the share of the page covered by images, capped at 1.
+
+    Summed rather than the largest image, because some scanners store a page as strips.
+    """
+    import pymupdf
+
+    coverage: list[float] = []
+    with pymupdf.open(pdf_path) as document:  # type: ignore[no-untyped-call]
+        for page in document:
+            area = (page.rect.width * page.rect.height) or 1.0
+            covered = 0.0
+            for info in page.get_image_info():
+                x0, y0, x1, y1 = info["bbox"]
+                covered += max(0.0, x1 - x0) * max(0.0, y1 - y0)
+            coverage.append(min(1.0, covered / area))
+    return coverage
+
+
 def truncate(text: str, policy: TruncationConfig) -> tuple[str, bool]:
     """Apply the project's truncation policy.
 
@@ -146,7 +203,7 @@ def extract_document(
         set, in which case thin pages are counted as unread
     :returns: The extracted document, ready to cache
     """
-    doc_id = doc_id or pdf_path.stem
+    doc_id = doc_id or doc_id_from_name(pdf_path.name)
     extracted = get_extractor(config.extractor)(pdf_path, config)
     if not extracted.text.strip() and config.fallback_extractor:
         logger.info("%s: %s produced no text, trying %s", doc_id, config.extractor, config.fallback_extractor)
@@ -156,7 +213,14 @@ def extract_document(
     page_count = max(extracted.page_count, 1)
     if extracted.pages is not None:
         pages = list(extracted.pages)
-        thin = [index for index, page in enumerate(pages) if len(page.strip()) < settings.min_chars_per_page]
+        coverage = image_coverage(pdf_path)
+        thin = [
+            index
+            for index, page in enumerate(pages)
+            if len(page.strip()) < settings.min_chars_per_page
+            and index < len(coverage)
+            and coverage[index] >= settings.min_image_coverage
+        ]
     else:
         # an extractor that cannot tell pages apart: judged on the whole document instead
         pages = [""] * page_count
@@ -189,12 +253,8 @@ def extract_document(
             if result.status == "truncated":
                 incomplete.add(index)
     elif wanted:
-        logger.warning(
-            "%s: %d page(s) have no usable text layer and extraction.transcription.model is not set; "
-            "they are left as they are and flagged",
-            doc_id,
-            len(thin),
-        )
+        # debug, not warning: the corpus-level summary names these documents once
+        logger.debug("%s: %d scanned page(s) left unread; no transcription model is set", doc_id, len(thin))
 
     unread = (set(thin) - transcribed) | incomplete
     full_text = "\n\n".join(pages)
@@ -248,7 +308,7 @@ def extract_corpus(
     :param client: An Anthropic client for transcription; created on first use if not given
     :returns: One record per document, in doc_id order
     """
-    pdfs = sorted(pdf_dir.glob("*.pdf"))
+    pdfs = list_pdfs(pdf_dir) if pdf_dir.is_dir() else []
     if not pdfs:
         raise FileNotFoundError(f"no PDFs found in {pdf_dir}")
     text_dir.mkdir(parents=True, exist_ok=True)
@@ -263,7 +323,7 @@ def extract_corpus(
 
     documents: list[ExtractedDocument] = []
     for pdf_path in pdfs:
-        doc_id = pdf_path.stem
+        doc_id = doc_id_from_name(pdf_path.name)
         target = text_path(text_dir, doc_id)
         previous = cached.get(doc_id)
         # a document with unread pages is retried once a transcription model is set, without --force
@@ -282,7 +342,7 @@ def extract_corpus(
     write_manifest(manifest_path, documents)
     flagged = [document.doc_id for document in documents if document.unread_pages]
     if flagged:
-        logger.warning("%d document(s) have pages with no usable text: %s", len(flagged), ", ".join(flagged))
+        logger.warning("%d document(s) have unread scanned pages; see %s", len(flagged), manifest_path.name)
     return documents
 
 

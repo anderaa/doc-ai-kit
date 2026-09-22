@@ -26,6 +26,7 @@ import csv
 import json
 import logging
 import random
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
@@ -33,6 +34,7 @@ from pathlib import Path
 from typing import Any
 
 from doc_harness.dataset import DatasetError, LabelRecord
+from doc_harness.extract import doc_id_from_name
 from doc_harness.normalize import boolean, is_null, strip_wrapping_quotes
 from doc_harness.normalize import date as normalize_date
 from doc_harness.normalize import enum as normalize_enum
@@ -46,21 +48,19 @@ logger = logging.getLogger(__name__)
 PLAN_FILE = "label_plan.json"
 SHEET_FILE = "labels.xlsx"
 SHEET_NAME = "labels"
-GUIDE_NAME = "guide"
 
+# rows are named by the PDF's file name, as the labeler sees it in the folder; a sheet
+# naming them by document id instead is read too
+FILE_COLUMN = "file_name"
 DOC_COLUMN = "doc_id"
-MODE_COLUMN = "mode"
-REVIEWED_COLUMN = "reviewed"
 NOTES_COLUMN = "notes"
-TEXT_COLUMN = "text file"
 
-# what a person writes in the reviewed column
-REVIEWED = "yes"
-SKIPPED = "skip"
+# a note starting "skip: <reason>" sets a document aside, e.g. one that is not a contract at all
+_SKIP_NOTE = re.compile(r"^\s*skip\b\s*[:\-\u2013\u2014]?\s*(.*)$", re.IGNORECASE | re.DOTALL)
 
-# the mode column tells the labeler what the row asks of them
-MODE_CORRECT = "correct"
-MODE_BLIND = "blind"
+# shading on the file_name cell of rows to label from scratch: the holdout, and any row the
+# model gave no answers for
+BLIND_FILL = "FFF2CC"
 
 # several answers in one cell; semicolons, because names and product lines carry commas
 LIST_SEPARATOR = ";"
@@ -349,10 +349,19 @@ class SheetRow:
     """One document's row, as the labeler left it."""
 
     doc_id: str
-    mode: str
-    reviewed: str
     cells: dict[str, str]
     notes: str = ""
+
+    @property
+    def skip_reason(self) -> str | None:
+        """Return the reason given in a "skip: ..." note, or None if the row is not skipped."""
+        match = _SKIP_NOTE.match(self.notes)
+        return match.group(1).strip() if match else None
+
+    @property
+    def is_empty(self) -> bool:
+        """Return whether nothing at all was filled in: not labeled yet, not a considered blank."""
+        return not self.notes and not any(self.cells.values())
 
 
 def write_sheet(
@@ -360,20 +369,20 @@ def write_sheet(
     registry: Registry,
     plan: LabelPlan,
     values: Mapping[str, Mapping[str, Any]],
-    reviewed: Mapping[str, str],
     notes: Mapping[str, str],
     text_dir: Path,
+    file_names: Mapping[str, str] | None = None,
 ) -> None:
-    """Write the labeling workbook: one row per sampled document, and a guide sheet.
+    """Write the labeling sheet: one tab, one row per sampled document, one column per task.
 
     :param path: Where to write the .xlsx file
     :param registry: The parsed tasks.yaml
     :param plan: The labeling plan
     :param values: Per document, the answers to show: existing labels, or model answers for
         documents being corrected. Never model answers for the holdout
-    :param reviewed: Per document, the reviewed mark to carry over from earlier labeling
     :param notes: Per document, notes to carry over
-    :param text_dir: The text cache, named in each row so the labeler knows what to open
+    :param text_dir: The text cache, to show an already-labeled span as its passage
+    :param file_names: Per document, its PDF's file name; ``<doc_id>.pdf`` where not given
     """
     from openpyxl import Workbook
     from openpyxl.comments import Comment
@@ -387,7 +396,7 @@ def write_sheet(
     assert sheet is not None
     sheet.title = SHEET_NAME
     task_ids = registry.ids
-    headers = [DOC_COLUMN, MODE_COLUMN, REVIEWED_COLUMN, *task_ids, NOTES_COLUMN, TEXT_COLUMN]
+    headers = [FILE_COLUMN, *task_ids, NOTES_COLUMN]
     sheet.append(headers)
     for column, header in enumerate(headers, start=1):
         cell = sheet.cell(row=1, column=column)
@@ -395,26 +404,34 @@ def write_sheet(
         if header in task_ids:
             task = registry.by_id(header)
             cell.comment = Comment(f"{task.question.strip()}\n\n{FORMAT_HINTS[TaskType(task.type)]}", "doc-harness")
+    sheet.cell(row=1, column=1).comment = Comment(
+        "Shaded rows start empty on purpose: label them from the document alone, without looking at any "
+        "model output. Unshaded rows, if filled in, hold the model's answers: check and correct every cell.\n\n"
+        "A blank cell means the document gives no answer.",
+        "doc-harness",
+    )
+    sheet.cell(row=1, column=len(headers)).comment = Comment(
+        "Anything worth recording about the document. To set a document aside -- not a contract, "
+        "unreadable -- write: skip: <reason>",
+        "doc-harness",
+    )
 
     has_spans = any(TaskType(task.type) is TaskType.SPAN for task in registry)
-    blind_fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
+    blind_fill = PatternFill(start_color=BLIND_FILL, end_color=BLIND_FILL, fill_type="solid")
     for doc_id in plan.sampled:
-        mode = MODE_BLIND if doc_id in holdout or doc_id not in plan.prefilled else MODE_CORRECT
         row_values = values.get(doc_id, {})
         text_file = text_dir / f"{doc_id}.md"
         # an imported span is stored as offsets, and goes back out as the passage it covers
         document = text_file.read_text(encoding="utf-8") if has_spans and text_file.exists() else ""
-        row = [
-            doc_id,
-            mode,
-            reviewed.get(doc_id, ""),
-            *(render_cell(registry.by_id(task_id), row_values.get(task_id), document) for task_id in task_ids),
-            notes.get(doc_id, ""),
-            str(text_file),
-        ]
-        sheet.append(row)
-        if mode == MODE_BLIND:
-            sheet.cell(row=sheet.max_row, column=2).fill = blind_fill
+        sheet.append(
+            [
+                (file_names or {}).get(doc_id, f"{doc_id}.pdf"),
+                *(render_cell(registry.by_id(task_id), row_values.get(task_id), document) for task_id in task_ids),
+                notes.get(doc_id, ""),
+            ]
+        )
+        if doc_id in holdout or doc_id not in plan.prefilled:
+            sheet.cell(row=sheet.max_row, column=1).fill = blind_fill
 
     last_row = max(sheet.max_row, 2)
     for cells in sheet.iter_rows(min_row=2, max_row=last_row):
@@ -423,85 +440,43 @@ def write_sheet(
             cell.number_format = "@"
             cell.alignment = Alignment(wrap_text=True, vertical="top")
 
-    def add_choices(column_index: int, choices: Sequence[str], strict: bool) -> None:
+    def add_choices(column_index: int, choices: Sequence[str]) -> None:
         formula = '"' + ",".join(choices) + '"'
         # Excel refuses a list longer than 255 characters; such a column is checked on import instead
         if len(formula) > 255:
             return
         validation = DataValidation(type="list", formula1=formula, allow_blank=True)
-        validation.errorStyle = "stop" if strict else "warning"
+        # a warning, not a stop: a synonym such as "California" is fine and is mapped on import
+        validation.errorStyle = "warning"
         validation.error = f"Expected one of: {', '.join(choices)}"
         sheet.add_data_validation(validation)
         letter = get_column_letter(column_index)
         validation.add(f"{letter}2:{letter}{last_row}")
 
-    add_choices(3, [REVIEWED, SKIPPED], strict=True)
     for offset, task_id in enumerate(task_ids):
         task = registry.by_id(task_id)
         task_type = TaskType(task.type)
         if task_type is TaskType.BINARY:
-            add_choices(4 + offset, ["yes", "no"], strict=False)
+            add_choices(2 + offset, ["yes", "no"])
         elif task_type is TaskType.MULTICLASS:
-            add_choices(4 + offset, task.enum_members or [], strict=False)
+            add_choices(2 + offset, task.enum_members or [])
 
-    widths = {DOC_COLUMN: 18, MODE_COLUMN: 9, REVIEWED_COLUMN: 10, NOTES_COLUMN: 30, TEXT_COLUMN: 30}
     for column, header in enumerate(headers, start=1):
         is_span = header in task_ids and TaskType(registry.by_id(header).type) is TaskType.SPAN
-        width = widths.get(header, 50 if is_span else 22)
+        width = {FILE_COLUMN: 45, NOTES_COLUMN: 30}.get(header, 50 if is_span else 22)
         sheet.column_dimensions[get_column_letter(column)].width = width
-    sheet.freeze_panes = "D2"
+    sheet.freeze_panes = "B2"
 
-    _write_guide(workbook.create_sheet(GUIDE_NAME), registry)
     path.parent.mkdir(parents=True, exist_ok=True)
     workbook.save(path)
     logger.info("wrote %s with %d document(s)", path, len(plan.sampled))
 
 
-def _write_guide(sheet: Any, registry: Registry) -> None:
-    """Explain the sheet to the person filling it in."""
-    from openpyxl.styles import Alignment, Font
-
-    lines = [
-        ["How to label"],
-        ["Each row is one document. Open its text file (last column) or its PDF, and fill in every task column."],
-        [
-            f"mode = {MODE_CORRECT}: the cells hold the model's answers. Check each one against the document "
-            "and fix what is wrong."
-        ],
-        [
-            f"mode = {MODE_BLIND}: the cells start empty on purpose. Label from the document alone. These rows "
-            "measure the final program, and seeing the model's answers first would bias that measurement."
-        ],
-        [
-            f"When a row is done, set {REVIEWED_COLUMN} to {REVIEWED}. Only reviewed rows are imported. "
-            f"Set it to {SKIPPED} for a document that cannot be labeled, and say why in {NOTES_COLUMN}."
-        ],
-        ["A blank cell means the document does not give an answer. Leave it blank rather than guessing."],
-        ["Then run: doc-harness import-labels. It checks every cell and lists every problem at once."],
-        [],
-        ["column", "type", "question", "how to fill it in", "allowed values"],
-    ]
-    for task in registry:
-        task_type = TaskType(task.type)
-        allowed = ", ".join(task.enum_members or []) if task.enum_members else ""
-        if task_type is TaskType.BINARY:
-            allowed = "yes, no"
-        lines.append([task.id, str(task_type), task.question.strip(), FORMAT_HINTS[task_type], allowed])
-    for line in lines:
-        sheet.append(line)
-    sheet["A1"].font = Font(bold=True, size=14)
-    header_row = 9
-    for cell in sheet[header_row]:
-        cell.font = Font(bold=True)
-    for row in sheet.iter_rows(min_row=header_row + 1):
-        for cell in row:
-            cell.alignment = Alignment(wrap_text=True, vertical="top")
-    for letter, width in zip("ABCDE", (24, 16, 60, 50, 30), strict=True):
-        sheet.column_dimensions[letter].width = width
-
-
 def read_sheet(path: Path, registry: Registry) -> list[SheetRow]:
     """Read the labeler's rows back from an .xlsx workbook or a .csv export of it.
+
+    The first tab is read, whatever it is called, and columns that are not tasks are ignored,
+    so a labeler can rename the tab or add a column of their own.
 
     :param path: The sheet
     :param registry: The parsed tasks.yaml, to check every task has a column
@@ -516,9 +491,7 @@ def read_sheet(path: Path, registry: Registry) -> list[SheetRow]:
         from openpyxl import load_workbook
 
         workbook = load_workbook(path, read_only=True, data_only=True)
-        if SHEET_NAME not in workbook.sheetnames:
-            raise LabelingError(f"{path} has no sheet named {SHEET_NAME!r}")
-        rows = list(workbook[SHEET_NAME].iter_rows(values_only=True))
+        rows = list(workbook.worksheets[0].iter_rows(values_only=True))
         workbook.close()
         if not rows:
             raise LabelingError(f"{path} is empty")
@@ -526,22 +499,22 @@ def read_sheet(path: Path, registry: Registry) -> list[SheetRow]:
         raw_rows = [dict(zip(names, row, strict=False)) for row in rows[1:]]
 
     headers_seen = set(raw_rows[0]) if raw_rows else set()
-    missing = [name for name in (DOC_COLUMN, REVIEWED_COLUMN, *registry.ids) if name not in headers_seen]
+    id_column = FILE_COLUMN if FILE_COLUMN in headers_seen else DOC_COLUMN
+    missing = [name for name in (id_column, *registry.ids) if name not in headers_seen]
     if raw_rows and missing:
         raise LabelingError(f"{path} is missing column(s): {', '.join(missing)}")
     parsed: list[SheetRow] = []
     for raw in raw_rows:
-        doc_id = _cell_text(raw.get(DOC_COLUMN))
+        name = _cell_text(raw.get(id_column))
+        doc_id = doc_id_from_name(name) if id_column == FILE_COLUMN else name
         if not doc_id:
             # a trailing row Excel kept after a deletion
             if any(_cell_text(value) for value in raw.values()):
-                raise LabelingError(f"{path}: a row with answers has no {DOC_COLUMN}")
+                raise LabelingError(f"{path}: a row with answers has no {id_column}")
             continue
         parsed.append(
             SheetRow(
                 doc_id=doc_id,
-                mode=_cell_text(raw.get(MODE_COLUMN)),
-                reviewed=_cell_text(raw.get(REVIEWED_COLUMN)).casefold(),
                 cells={task_id: _cell_text(raw.get(task_id)) for task_id in registry.ids},
                 notes=_cell_text(raw.get(NOTES_COLUMN)),
             )
@@ -552,17 +525,16 @@ def read_sheet(path: Path, registry: Registry) -> list[SheetRow]:
 
 @dataclass
 class ImportResult:
-    """What an import found: the labels it can write, and everything wrong with the rest."""
+    """What an import found: the labels it can write, and everything wrong with the sheet."""
 
     records: list[LabelRecord] = field(default_factory=list)
     skipped: dict[str, str] = field(default_factory=dict)
-    unreviewed: list[str] = field(default_factory=list)
     problems: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
-        """Return whether every reviewed row was readable."""
+        """Return whether the whole sheet was finished and readable."""
         return not self.problems
 
 
@@ -572,10 +544,13 @@ def import_rows(
     rows: Sequence[SheetRow],
     texts: Mapping[str, str],
 ) -> ImportResult:
-    """Check every reviewed row and turn it into a label record, collecting every problem.
+    """Check the whole sheet and turn every row into a label record, collecting every problem.
 
-    Problems are gathered rather than raised one at a time, because a person fixing a sheet
-    wants the whole list, not one error per run.
+    The sheet is imported whole or not at all: every sampled document needs a row, and every
+    row needs to be finished. A row with nothing in it -- no answer and no note -- is taken
+    as not labeled yet, since a document that truly answers none of the questions can say so
+    in its note. Problems are gathered rather than raised one at a time, because a person
+    fixing a sheet wants the whole list, not one error per run.
 
     :param registry: The parsed tasks.yaml
     :param plan: The labeling plan the sheet was made from
@@ -595,18 +570,17 @@ def import_rows(
         if row.doc_id not in sampled:
             result.problems.append(f"{row.doc_id}: not in the labeling sample in {PLAN_FILE}")
             continue
-        if row.reviewed == SKIPPED:
-            if not row.notes:
-                result.problems.append(f"{row.doc_id}: skipped with no reason; say why in the {NOTES_COLUMN} column")
-            result.skipped[row.doc_id] = row.notes
+        reason = row.skip_reason
+        if reason is not None:
+            if not reason:
+                result.problems.append(f"{row.doc_id}: skipped with no reason; write skip: <reason> in {NOTES_COLUMN}")
+            result.skipped[row.doc_id] = reason
             continue
-        if row.reviewed != REVIEWED:
-            if row.reviewed:
-                result.problems.append(
-                    f"{row.doc_id}: {REVIEWED_COLUMN} is {row.reviewed!r}; use {REVIEWED}, {SKIPPED} or leave it blank"
-                )
-            else:
-                result.unreviewed.append(row.doc_id)
+        if row.is_empty:
+            result.problems.append(
+                f"{row.doc_id}: nothing filled in yet. If the document really answers none of the "
+                f"questions, say so in {NOTES_COLUMN}"
+            )
             continue
         text = texts.get(row.doc_id)
         if text is None:

@@ -179,34 +179,39 @@ redone. Open a few cached texts to check them, especially transcribed ones.
 
 ```
 doc-harness sample-labels --count 120
-doc-harness label-sheet
+doc-harness label-sheet --prefill        # or --no-prefill
 ```
 
 `sample-labels` picks the documents to label, and the holdout among them, at random. Pick
 the count from how many examples the rarest class needs (the `sample-sizes` skill), not
 from how much time there is.
 
-`label-sheet` runs the model on the sample outside the holdout and writes
-`data/labels.xlsx`. With the Batch API this can take up to an hour; `--live` is faster at
-twice the price.
+`label-sheet` writes `data/labels.xlsx`: one tab, one row per file to label, one column per
+task, and `notes`. You choose how it starts:
 
-Then **you** label, in Excel or Google Sheets. The `guide` tab explains each column:
+- `--prefill`: the model answers the rows outside the holdout first, and you correct them.
+  Two to three times faster to label; it costs a model call per document, and through the
+  Batch API it can take up to an hour (`--live` is faster at twice the price).
+- `--no-prefill`: every row starts empty, and every label is your own reading. Slower, and
+  free.
 
-- `mode = correct` rows hold the model's answers: check each one and fix what is wrong.
-- `mode = blind` rows are empty on purpose. Label them from the document alone. Do not
-  ask Claude to fill them: they measure the final program, and model-written labels there
-  would measure the model against itself.
-- A blank cell means the document gives no answer. For a passage, paste the sentence from
-  the text file; the harness finds its position.
-- Set `reviewed` to `yes` on each finished row, or `skip` with a reason in `notes`.
+Claude then walks you through what each column asks and the format it takes. Then **you**
+label, in Excel or Google Sheets:
+
+- Shaded rows start empty on purpose, either way. Label them from the document alone. Do
+  not ask Claude to fill them: they measure the final program, and model-written labels
+  there would measure the model against itself.
+- A blank cell means the document gives no answer. For a passage, paste the sentence; the
+  harness finds its position.
+- To set a document aside, write `skip: <reason>` in `notes`.
 
 ```
 doc-harness import-labels
 ```
 
-It lists every problem at once and writes `data/labels.jsonl` only when all of them pass.
-Run it as often as you like while labeling. Commit the sheet and the labels as you go --
-they are the most expensive thing in the repo.
+The sheet is imported whole, once every row is finished. It lists every problem at once
+and writes `data/labels.jsonl` only when all of them pass. Commit the sheet as you go -- it
+is the most expensive thing in the repo.
 
 ### 7. Audit the labels and write the rules
 

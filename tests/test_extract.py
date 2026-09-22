@@ -26,6 +26,20 @@ def make_pdf(path: Path, pages: list[str]) -> Path:
     return path
 
 
+def make_scanned_pdf(path: Path) -> Path:
+    """Write a one-page PDF whose only content is an image of text, as a scanner produces."""
+    import pymupdf
+
+    source = pymupdf.open()  # type: ignore[no-untyped-call]
+    source.new_page().insert_text((72, 100), "Scanned text", fontsize=14)
+    pixmap = source[0].get_pixmap(dpi=72)
+    document = pymupdf.open()  # type: ignore[no-untyped-call]
+    page = document.new_page()
+    page.insert_image(page.rect, pixmap=pixmap)
+    document.save(path)
+    return path
+
+
 @pytest.fixture
 def corpus(tmp_path: Path) -> Path:
     pdf_dir = tmp_path / "pdfs"
@@ -33,8 +47,8 @@ def corpus(tmp_path: Path) -> Path:
     body = "\n".join(f"This agreement is governed by the laws of California. Line {i}." for i in range(30))
     make_pdf(pdf_dir / "doc_a.pdf", [body, body])
     make_pdf(pdf_dir / "doc_b.pdf", [body])
-    # a scanned-looking document: a page with almost no text layer
-    make_pdf(pdf_dir / "doc_scan.pdf", ["x"])
+    # a scanned document: the page is an image, with no text layer
+    make_scanned_pdf(pdf_dir / "doc_scan.pdf")
     return pdf_dir
 
 
@@ -187,3 +201,54 @@ def test_manifests_from_before_transcription_still_load(tmp_path: Path, corpus: 
     documents = {d.doc_id: d for d in extract_corpus(corpus, text_dir, manifest, ExtractionConfig())}
     assert documents["doc_b"].transcription_model == "tesseract" and documents["doc_b"].unread_pages == 0
     assert documents["doc_scan"].unread_pages == 1
+
+
+def test_uppercase_pdf_extensions_are_found(tmp_path: Path) -> None:
+    """Seen in CUAD: 311 of 510 files end in .PDF, and a *.pdf glob skipped every one of them."""
+    from doc_harness.extract import list_pdfs
+
+    pdf_dir = tmp_path / "pdfs"
+    pdf_dir.mkdir()
+    body = "The agreement is governed by the laws of Delaware. " * 5
+    make_pdf(pdf_dir / "lower.pdf", [body])
+    make_pdf(pdf_dir / "Upper Case Agreement .PDF", [body])
+    (pdf_dir / "notes.docx").write_text("not a pdf", encoding="utf-8")
+    (pdf_dir / ".DS_Store").write_text("", encoding="utf-8")
+    assert [path.name for path in list_pdfs(pdf_dir)] == ["Upper Case Agreement .PDF", "lower.pdf"]
+
+    documents = extract_corpus(pdf_dir, tmp_path / "text", tmp_path / "m.csv", ExtractionConfig())
+    assert sorted(d.doc_id for d in documents) == ["Upper Case Agreement", "lower"]
+    assert (tmp_path / "text" / "Upper Case Agreement.md").exists()
+
+
+def test_two_files_with_the_same_document_id_are_refused(tmp_path: Path) -> None:
+    from doc_harness.extract import list_pdfs
+
+    pdf_dir = tmp_path / "pdfs"
+    pdf_dir.mkdir()
+    make_pdf(pdf_dir / "Contract.pdf", ["x"])
+    make_pdf(pdf_dir / "Contract .PDF", ["x"])
+    with pytest.raises(ValueError, match="would both be document 'Contract'"):
+        list_pdfs(pdf_dir)
+
+
+@pytest.mark.parametrize(
+    "name,expected",
+    [
+        ("a.pdf", "a"),
+        ("A.PDF", "A"),
+        ("Deal .PDF", "Deal"),
+        ("LECLANCHE S.A. - AGREEMENT", "LECLANCHE S.A. - AGREEMENT"),
+    ],
+)
+def test_doc_id_from_name(name: str, expected: str) -> None:
+    from doc_harness.extract import doc_id_from_name
+
+    assert doc_id_from_name(name) == expected
+
+
+def test_short_and_blank_pages_are_not_scans(tmp_path: Path) -> None:
+    """Seen in CUAD: 230 pages under 100 characters, of which 2 were scans. The rest are just short."""
+    pdf = make_pdf(tmp_path / "short.pdf", ["EXHIBIT A\n11", "", "Signature page follows."])
+    document = extract_document(pdf, ExtractionConfig())
+    assert document.thin_pages == document.unread_pages == 0

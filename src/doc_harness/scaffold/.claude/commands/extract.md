@@ -28,9 +28,12 @@ Writes `data/text/{doc_id}.md` and `data/extraction_manifest.csv`.
 
 ## Scanned pages
 
-A page whose text layer has fewer than `extraction.transcription.min_chars_per_page`
-characters -- usually a scan -- is rendered to an image and transcribed by Claude, and the
-transcription goes into the cached text in that page's place. This is decided **page by
+A page that looks scanned -- fewer than `extraction.transcription.min_chars_per_page`
+characters of text layer, **and** images covering at least `min_image_coverage` of it -- is
+rendered to an image and transcribed by Claude, and the transcription goes into the cached
+text in that page's place. Both conditions, because most short pages are just short: a
+signature block, a blank page, an exhibit cover. On CUAD's 510 contracts, 230 pages had
+under 100 characters and 2 of them were scans. This is decided **page by
 page**: a report with twenty typed pages and five scanned pages of accounts gets those five
 read, rather than passing on a healthy-looking average with them blank.
 

@@ -4,6 +4,44 @@ Projects pin one exact harness version. Read the entry for a version before movi
 project onto it: some releases change how answers are scored, and a number measured under
 one version is not comparable with a number measured under another.
 
+## Unreleased
+
+**Changes which documents are extracted, and which pages are sent for transcription.** Found
+by a dry run on CUAD's 510 contracts.
+
+Upgrading a project:
+
+- **Run `doc-harness extract` again.** If any PDFs end in `.PDF`, they were skipped before and
+  will be extracted now; nothing already cached changes.
+- Documents whose file name has a space before `.pdf` get an id without it. If one was already
+  extracted or labeled under the old id, run `extract --force` and re-import its labels.
+
+Changes:
+
+- **PDFs are found whatever the case of their extension.** Extraction globbed `*.pdf`, so a
+  `.PDF` file was skipped without a word: on CUAD, 311 of 510. The count check did not catch
+  it, because it counted the same filtered list. Other files in `data/pdfs/` are now named in a
+  warning, and two files that would share a document id are refused.
+- **Document ids are trimmed.** `"Manufacturing Agreement .PDF"` becomes
+  `Manufacturing Agreement`, not an id ending in a space that a spreadsheet cell would drop.
+- **A page is only treated as scanned if images cover most of it** (`min_image_coverage`,
+  default 0.5), as well as having almost no text. On CUAD, 230 pages had under 100 characters,
+  and 2 were scans; the rest were blank pages, page numbers and exhibit covers, which would
+  have been paid for and reported as unread.
+- **The labeling sheet is one tab: `file_name`, one column per task, and `notes`.** Rows are
+  named by the PDF's file name, as the labeler sees it in the folder. The `mode`, `reviewed`
+  and text-file columns and the guide tab are gone: Claude explains the columns, and each
+  header carries a note. Rows to label from scratch are shaded. `import-labels` reads the
+  first tab whatever it is called, ignores extra columns, and accepts `file_name` or `doc_id`.
+- **Prefilling is the user's choice.** `label-sheet` requires `--prefill` or `--no-prefill`
+  and explains the trade-off if neither is given. The holdout is empty either way.
+- **The sheet is imported whole.** Every sampled document needs a finished row; a row with
+  no answers and no note counts as not done. `skip: <reason>` in `notes` replaces the
+  `reviewed = skip` marker. Partial imports are gone.
+- The labeling guidance tells Claude to ask the prefill question, to walk the user through
+  each column's question and format before they start, and never to fill in rows itself.
+- `extract` prints one summary for unread pages instead of a warning per document.
+
 ## 0.1.7
 
 **Changes the cached text of any document with a scanned page**, and so can change scores on

@@ -15,9 +15,8 @@ from openpyxl import load_workbook
 
 from doc_harness.cli import Project, cli
 from doc_harness.dataset import LabelRecord, load_labels
+from doc_harness.extract import doc_id_from_name
 from doc_harness.labeling import (
-    MODE_BLIND,
-    MODE_CORRECT,
     CellError,
     LabelingError,
     LabelPlan,
@@ -203,41 +202,57 @@ def _toy(fixtures_dir: Path) -> Registry:
     return Registry.from_yaml(fixtures_dir / "toy_tasks.yaml")
 
 
-def test_the_sheet_leaves_holdout_rows_empty(tmp_path: Path, fixtures_dir: Path, plan: LabelPlan) -> None:
+def test_the_sheet_is_one_tab_of_file_names_and_labels(tmp_path: Path, fixtures_dir: Path, plan: LabelPlan) -> None:
     registry = _toy(fixtures_dir)
     answers = {doc_id: {"flag": True, "state": "CA", "number": "0042"} for doc_id in ("a", "b", "d")}
     path = tmp_path / "labels.xlsx"
-    write_sheet(path, registry, plan, answers, {"a": "yes"}, {}, tmp_path)
+    write_sheet(path, registry, plan, answers, {"b": "odd scan"}, tmp_path)
 
-    sheet = load_workbook(path)["labels"]
-    rows = {row[0]: row for row in sheet.iter_rows(min_row=2, values_only=True)}
-    assert rows["a"][1:6] == (MODE_CORRECT, "yes", "yes", "CA", "0042")
-    assert rows["c"][1] == MODE_BLIND and rows["c"][3:6] == (None, None, None)
-    # the holdout gets nothing even if answers for it were handed in by mistake
-    assert rows["d"][1] == MODE_BLIND
-    assert sheet.cell(row=2, column=6).number_format == "@"
-    assert "guide" in load_workbook(path).sheetnames
+    workbook = load_workbook(path)
+    assert workbook.sheetnames == ["labels"]
+    sheet = workbook["labels"]
+    rows = {doc_id_from_name(row[0]): row for row in sheet.iter_rows(min_row=2, values_only=True)}
+    assert [cell.value for cell in sheet[1]] == ["file_name", "flag", "state", "number", "notes"]
+    assert sheet["A2"].value == "a.pdf"
+    assert rows["a"][1:] == ("yes", "CA", "0042", None)
+    assert rows["b"][4] == "odd scan"
+    assert rows["c"][1:4] == (None, None, None)
+    # a holdout row shows only what it is given; the prefill step is what never runs the model on it
+    assert rows["d"][1:4] == ("yes", "CA", "0042")
+    shaded = {doc_id_from_name(row[0].value) for row in sheet.iter_rows(min_row=2) if row[0].fill.fill_type}
+    assert shaded == {"c", "d"}, "rows to label from scratch are the ones not prefilled, holdout included"
+    assert sheet.cell(row=2, column=4).number_format == "@"
 
 
 def test_read_sheet_reads_xlsx_and_csv_alike(tmp_path: Path, fixtures_dir: Path, plan: LabelPlan) -> None:
     registry = _toy(fixtures_dir)
     path = tmp_path / "labels.xlsx"
-    write_sheet(path, registry, plan, {"a": {"flag": True, "state": "CA", "number": "0042"}}, {}, {}, tmp_path)
+    write_sheet(path, registry, plan, {"a": {"flag": True, "state": "CA", "number": "0042"}}, {}, tmp_path)
     from_xlsx = read_sheet(path, registry)
 
     csv_path = tmp_path / "labels.csv"
     with csv_path.open("w", encoding="utf-8-sig", newline="") as handle:
         writer = csv.writer(handle)
-        writer.writerow(["doc_id", "mode", "reviewed", "flag", "state", "number", "notes"])
-        writer.writerow(["a", "correct", "Yes", "yes", "CA", "0042", ""])
+        writer.writerow(["doc_id", "flag", "state", "number", "notes"])
+        writer.writerow(["a", "yes", "CA", "0042", ""])
     from_csv = read_sheet(csv_path, registry)
     assert from_xlsx[0].cells == from_csv[0].cells == {"flag": "yes", "state": "CA", "number": "0042"}
-    assert from_csv[0].reviewed == "yes"
+
+
+def test_a_renamed_tab_and_extra_columns_are_fine(tmp_path: Path, fixtures_dir: Path, plan: LabelPlan) -> None:
+    registry = _toy(fixtures_dir)
+    path = tmp_path / "labels.xlsx"
+    write_sheet(path, registry, plan, {"a": {"flag": True, "state": "CA", "number": "1"}}, {}, tmp_path)
+    workbook = load_workbook(path)
+    workbook["labels"].title = "My labels"
+    workbook["My labels"].cell(row=1, column=7).value = "my own column"
+    workbook.save(path)
+    assert read_sheet(path, registry)[0].cells["state"] == "CA"
 
 
 def test_read_sheet_names_a_missing_task_column(tmp_path: Path, fixtures_dir: Path) -> None:
     path = tmp_path / "labels.csv"
-    path.write_text("doc_id,reviewed,flag\na,yes,yes\n", encoding="utf-8")
+    path.write_text("file_name,flag\na.pdf,yes\n", encoding="utf-8")
     with pytest.raises(LabelingError, match="state, number"):
         read_sheet(path, _toy(fixtures_dir))
 
@@ -245,56 +260,68 @@ def test_read_sheet_names_a_missing_task_column(tmp_path: Path, fixtures_dir: Pa
 # importing
 
 
-def _row(doc_id: str, reviewed: str = "yes", notes: str = "", **cells: str) -> SheetRow:
-    return SheetRow(
-        doc_id=doc_id,
-        mode="",
-        reviewed=reviewed,
-        cells={"flag": "yes", "state": "CA", "number": "7", **cells},
-        notes=notes,
-    )
+def _row(doc_id: str, notes: str = "", **cells: str) -> SheetRow:
+    return SheetRow(doc_id=doc_id, cells={"flag": "yes", "state": "CA", "number": "7", **cells}, notes=notes)
+
+
+def _texts(plan: LabelPlan) -> dict[str, str]:
+    return {doc_id: document_for(doc_id) for doc_id in plan.sampled}
 
 
 def test_import_records_how_each_document_was_labeled(fixtures_dir: Path, plan: LabelPlan) -> None:
-    texts = {doc_id: document_for(doc_id) for doc_id in plan.sampled}
-    result = import_rows(_toy(fixtures_dir), plan, [_row("a"), _row("b"), _row("c", reviewed=""), _row("d")], texts)
+    rows = [_row("a"), _row("b"), _row("c", notes="skip: not a contract"), _row("d")]
+    result = import_rows(_toy(fixtures_dir), plan, rows, _texts(plan))
     assert result.ok, result.problems
     modes = {record.doc_id: record.labeling_mode for record in result.records}
     assert modes == {"a": "corrected", "b": "corrected", "d": "blind"}
-    assert result.unreviewed == ["c"]
+    assert result.skipped == {"c": "not a contract"}
     assert all(record.inclusion_probability == pytest.approx(0.4) for record in result.records)
     assert result.records[0].labels == {"flag": True, "state": "CA", "number": "7"}
 
 
+def test_an_empty_row_means_unfinished(fixtures_dir: Path, plan: LabelPlan) -> None:
+    """A blank cell can mean "no answer", but a row with nothing at all was never labeled."""
+    empty = SheetRow(doc_id="c", cells={"flag": "", "state": "", "number": ""})
+    result = import_rows(_toy(fixtures_dir), plan, [_row("a"), _row("b"), empty, _row("d")], _texts(plan))
+    assert not result.ok and any("c: nothing filled in yet" in problem for problem in result.problems)
+
+    considered = SheetRow(doc_id="c", cells={"flag": "", "state": "", "number": ""}, notes="answers none of these")
+    result = import_rows(_toy(fixtures_dir), plan, [_row("a"), _row("b"), considered, _row("d")], _texts(plan))
+    assert result.ok, result.problems
+    assert next(r for r in result.records if r.doc_id == "c").labels == {"flag": None, "state": None, "number": None}
+
+
+@pytest.mark.parametrize("note", ["skip: unreadable", "Skip - unreadable", "SKIP unreadable", "skip \u2013 unreadable"])
+def test_skip_notes_are_read_generously(note: str) -> None:
+    assert SheetRow(doc_id="x", cells={}, notes=note).skip_reason == "unreadable"
+
+
+def test_a_note_mentioning_skip_later_is_not_a_skip() -> None:
+    assert SheetRow(doc_id="x", cells={}, notes="checked; did not skip anything").skip_reason is None
+    assert SheetRow(doc_id="x", cells={}, notes="skipping clause 4 was deliberate").skip_reason is None
+
+
 def test_import_lists_every_problem_at_once(fixtures_dir: Path, plan: LabelPlan) -> None:
-    texts = {doc_id: document_for(doc_id) for doc_id in plan.sampled}
     rows = [
         _row("a", state="Ohio", flag="maybe"),
-        _row("b", reviewed="done"),
-        _row("c", reviewed="skip"),
+        _row("c", notes="skip"),
         _row("zz"),
         _row("d"),
         _row("d"),
     ]
-    result = import_rows(_toy(fixtures_dir), plan, rows, texts)
+    result = import_rows(_toy(fixtures_dir), plan, rows, _texts(plan))
     assert not result.ok
     joined = "\n".join(result.problems)
     for fragment in (
         "a / state",
         "a / flag",
-        "b: reviewed is 'done'",
         "c: skipped with no reason",
         "zz: not in the labeling sample",
         "d: appears in more than one row",
+        "1 sampled document(s) have no row: b",
     ):
         assert fragment in joined, fragment
     assert not any(record.doc_id == "a" for record in result.records)
-
-
-def test_a_sampled_document_with_no_row_is_a_problem(fixtures_dir: Path, plan: LabelPlan) -> None:
-    texts = {doc_id: document_for(doc_id) for doc_id in plan.sampled}
-    result = import_rows(_toy(fixtures_dir), plan, [_row("a")], texts)
-    assert any("have no row" in problem for problem in result.problems)
 
 
 # splits
@@ -345,17 +372,16 @@ def _invoke(project: Path, *args: str) -> Any:
 
 
 def _fill_sheet(path: Path, answer: dict[str, str], only: set[str] | None = None) -> None:
-    """Play the labeler: fill empty cells, mark rows reviewed."""
+    """Play the labeler: fill in the empty cells."""
     workbook = load_workbook(path)
     sheet = workbook["labels"]
     headers = [cell.value for cell in sheet[1]]
     for row in sheet.iter_rows(min_row=2):
-        if only is not None and row[0].value not in only:
+        if only is not None and doc_id_from_name(row[0].value) not in only:
             continue
         for column, name in enumerate(headers):
             if name in answer and not row[column].value:
                 row[column].value = answer[name]
-        row[headers.index("reviewed")].value = "yes"
     workbook.save(path)
 
 
@@ -382,49 +408,57 @@ def test_labeling_end_to_end(project: Path, monkeypatch: pytest.MonkeyPatch) -> 
         doc_id: {"flag": ("true", "false")[index % 2], "state": ("CA", "NY", "TX")[index % 3], "number": "A-1"}
         for index, doc_id in enumerate(plan["sampled"])
     }
+    # the labeler has to choose: prefilled or not
+    refused = _invoke(project, "label-sheet")
+    assert refused.exit_code != 0 and "--prefill or --no-prefill" in refused.output
     with scripted_lm(answers):
-        result = _invoke(project, "label-sheet")
+        result = _invoke(project, "label-sheet", "--prefill")
     assert result.exit_code == 0, result.output
     assert set(seen) == set(plan["sampled"]) - set(plan["holdout"]), "the model saw a holdout document"
     plan = json.loads((project / "data" / "label_plan.json").read_text())
     assert sorted(plan["prefilled"]) == sorted(set(plan["sampled"]) - set(plan["holdout"]))
 
     sheet_path = project / "data" / "labels.xlsx"
-    refused = _invoke(project, "label-sheet")
+    refused = _invoke(project, "label-sheet", "--prefill")
     assert refused.exit_code != 0 and "import-labels" in refused.output
 
-    # label the documents to correct, but not the holdout yet
+    # an unfinished sheet is refused whole: the holdout rows are still empty
     to_correct = set(plan["sampled"]) - set(plan["holdout"])
     _fill_sheet(sheet_path, {"flag": "no", "state": "CA", "number": "B-2"}, only=to_correct)
     assert any("changed since the last import" in warning for warning in derive(project).warnings)
     result = _invoke(project, "import-labels")
-    assert result.exit_code == 0, result.output
-    assert "Holdout: 0 of 6 labeled" in result.output
-    records = load_labels(project / "data" / "labels.jsonl")
-    assert {record.labeling_mode for record in records} == {"corrected"}
-    # prefilled answers the labeler left alone are kept, not overwritten by the fill
-    assert all(record.labels["state"] == answers[record.doc_id]["state"] for record in records)
+    assert result.exit_code == 1
+    assert result.output.count("nothing filled in yet") == 6
+    assert not (project / "data" / "labels.jsonl").exists()
 
-    state = derive(project)
-    assert "14 of 20 labeled (0 of 6 holdout)" in state.to_text()
-    assert not any("changed since the last import" in warning for warning in state.warnings)
-
-    # the holdout is still missing, so the splits refuse
-    (project / "data" / "annotation_rules.md").write_text("rules", encoding="utf-8")
-    refused = _invoke(project, "make-splits", "--non-interactive")
-    assert refused.exit_code != 0
-
-    # re-exporting keeps the imported rows; then the labeler finishes the holdout blind
-    with scripted_lm(answers):
-        assert _invoke(project, "label-sheet", "--force").exit_code == 0
+    # finished: the holdout labeled from scratch
     _fill_sheet(sheet_path, {"flag": "yes", "state": "TX", "number": "C-3"})
     result = _invoke(project, "import-labels")
     assert result.exit_code == 0, result.output
+    assert "Holdout: 6 of 6 labeled" in result.output
     records = load_labels(project / "data" / "labels.jsonl")
     blind = {record.doc_id for record in records if record.labeling_mode == "blind"}
     assert blind == set(plan["holdout"])
     assert {record.labels["state"] for record in records if record.doc_id in blind} == {"TX"}
+    # prefilled answers the labeler left alone are kept, not overwritten by the fill
+    corrected = [record for record in records if record.doc_id not in blind]
+    assert all(record.labels["state"] == answers[record.doc_id]["state"] for record in corrected)
 
+    state = derive(project)
+    assert "20 of 20 labeled (6 of 6 holdout)" in state.to_text()
+    assert not any("changed since the last import" in warning for warning in state.warnings)
+
+    # rewriting the sheet brings back what was imported, with no model call and no choice to make
+    seen.clear()
+    assert _invoke(project, "label-sheet", "--force").exit_code == 0
+    assert not seen
+    rewritten = {
+        doc_id_from_name(row[0]): row
+        for row in load_workbook(sheet_path)["labels"].iter_rows(min_row=2, values_only=True)
+    }
+    assert all(rewritten[doc_id][2] == "TX" for doc_id in blind)
+
+    (project / "data" / "annotation_rules.md").write_text("rules", encoding="utf-8")
     result = _invoke(project, "make-splits", "--non-interactive")
     assert result.exit_code == 0, result.output
     splits = json.loads((project / "data" / "splits.json").read_text())
@@ -457,3 +491,18 @@ def test_without_prefill_every_row_is_blind(project: Path) -> None:
     _fill_sheet(project / "data" / "labels.xlsx", {"flag": "yes", "state": "CA", "number": "1"})
     assert _invoke(project, "import-labels").exit_code == 0
     assert {record.labeling_mode for record in load_labels(project / "data" / "labels.jsonl")} == {"blind"}
+
+
+def test_rows_are_named_by_the_real_file_name(tmp_path: Path, fixtures_dir: Path, plan: LabelPlan) -> None:
+    """Seen in CUAD: capital .PDF, and a space before it that a spreadsheet cell drops."""
+    registry = _toy(fixtures_dir)
+    names = {"a": "Sonos, Inc. - Manufacturing Agreement .PDF"}
+    single = LabelPlan(seed=1, corpus_size=1, sampled=["a"], holdout=[])
+    path = tmp_path / "labels.xlsx"
+    write_sheet(path, registry, single, {}, {}, tmp_path, file_names=names)
+    assert load_workbook(path)["labels"]["A2"].value == names["a"]
+
+    workbook = load_workbook(path)
+    workbook["labels"]["A2"].value = "  Sonos, Inc. - Manufacturing Agreement .PDF "
+    workbook.save(path)
+    assert [row.doc_id for row in read_sheet(path, registry)] == ["Sonos, Inc. - Manufacturing Agreement"]

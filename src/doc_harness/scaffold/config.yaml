@@ -30,7 +30,10 @@ extraction:
     # no default, as with models.task: a corpus of clean PDFs never needs it. Pages that need
     # it are flagged by extract until it is set, and set later, only those documents are redone
     model: null
+    # a page is treated as scanned when it has fewer characters than this AND images cover
+    # at least min_image_coverage of it; most short pages are simply short
     min_chars_per_page: 100
+    min_image_coverage: 0.5
     # the longer edge of the page image; larger reads small print better and costs more
     max_image_px: 2000
     max_tokens: 8192
