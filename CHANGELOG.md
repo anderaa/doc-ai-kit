@@ -4,7 +4,22 @@ Projects pin one exact harness version. Read the entry for a version before movi
 project onto it: some releases change how answers are scored, and a number measured under
 one version is not comparable with a number measured under another.
 
-## Unreleased
+## 0.1.5
+
+**Does not change scores or prompts.** Production sends the same requests and parses replies the
+same way; only the route and the price change.
+
+Upgrading a project:
+
+- **Production now waits for a batch** with Anthropic models: usually under an hour, at most a
+  day, at half the price. Set `production.use_batch_api: false` to keep live requests.
+- **Re-lock after moving the pin** (`make lock && make sync`): this release adds the `anthropic`
+  SDK as a dependency.
+- **A production run started under 0.1.4 can be resumed.** Its checkpoints load unchanged;
+  documents not yet produced go through the batch.
+- config.yaml needs no change: the new batch settings have defaults.
+
+Changes:
 
 - **Production runs through the Message Batches API** for Anthropic models, at half the
   price. Requests are captured from the live path at the moment of sending, so a batch
