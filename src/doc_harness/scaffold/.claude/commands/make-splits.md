@@ -51,7 +51,17 @@ random sampling would need to reach the floor. Then it asks for one of four choi
 - **report_unmeasured** -- keep scoring and reporting it, but drop it from the optimization
   target by adding it to `metric.excluded_classes` in `config.yaml`.
 
-The choice and its rationale are appended to `decisions.md`.
+The choice and its rationale are appended to `decisions.md`, and a `report_unmeasured` choice
+is written into `metric.excluded_classes` in `config.yaml` for you.
+
+With many rare classes -- a fifty-state enum on a small corpus produces dozens -- answer them
+together rather than one at a time:
+
+```
+doc-harness make-splits --below-floor report_unmeasured --rationale "the corpus has too few of each"
+```
+
+One prompt, one recorded decision naming every class, and one edit to `config.yaml`.
 
 ## Enrichment strata
 

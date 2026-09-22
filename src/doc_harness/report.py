@@ -18,6 +18,7 @@ on a number that rests on three documents.
 from __future__ import annotations
 
 import csv
+import json
 import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -31,7 +32,7 @@ from doc_harness.evaluate import EvaluationResult, run_program, score_split, tas
 from doc_harness.guards import HoldoutLock, open_holdout
 from doc_harness.metric import Metric
 from doc_harness.registry import Registry
-from doc_harness.stats import readable_at
+from doc_harness.stats import readable_at, wilson_interval
 
 logger = logging.getLogger(__name__)
 
@@ -119,22 +120,33 @@ class HoldoutReport:
         return [gap.task_id for gap in self.gaps if gap.is_large]
 
     def to_markdown(self) -> str:
-        """Render the holdout section of REPORT.md."""
+        """Render the holdout section of REPORT.md, for a reader who did not build the program."""
         aggregate_low, aggregate_high = self.result.aggregate_ci
+        difference = self.validation_aggregate - self.result.aggregate
+        against_tuning = "the same" if abs(difference) < 0.005 else f"a difference of {difference:+.3f}"
         lines = [
-            "# Holdout",
+            "# How well it works",
             "",
-            f"Measured once on {len(self.result.scores)} documents "
+            f"These numbers come from **{len(self.result.scores)} documents the program never saw while it "
+            "was being built**. They were set aside at the start, labeled by hand, and used once, at the "
+            "end. That is what makes them a fair estimate of how it behaves on new documents "
             f"({self.result.metadata.get('generated_at', '')}).",
             "",
-            f"Aggregate **{self.result.aggregate:.3f}** "
-            f"(95% CI {aggregate_low:.3f}-{aggregate_high:.3f}) "
-            f"against {self.validation_aggregate:.3f} on validation, "
-            f"a gap of {self.validation_aggregate - self.result.aggregate:+.3f}.",
+            f"**Score: {self.result.aggregate:.3f} out of 1.0.** The true value is very likely between "
+            f"{aggregate_low:.3f} and {aggregate_high:.3f}. While it was being built it scored "
+            f"{self.validation_aggregate:.3f} on the documents used for tuning, {against_tuning}. "
+            "A score well below the tuning number means the program learned quirks of those documents "
+            "rather than the task.",
             "",
-            f"Reading: **{self.reading}**. Action: **{self.action}**.",
+            f"Reading: **{self.reading}**. What to do: **{self.action}**.",
             "",
-            "| task | holdout | 95% CI | validation | gap | support | reads as |",
+            "## Question by question",
+            "",
+            "**Score** is this question's headline number, from 0 to 1. **Range** is where its true value "
+            "very likely sits: a wide range means too few examples to be sure, not a worse program. "
+            "**While tuning** is what the same question scored on the documents used to build it.",
+            "",
+            "| question | score | range | while tuning | difference | examples | what this many can tell you |",
             "| --- | --- | --- | --- | --- | --- | --- |",
         ]
         for gap in self.gaps:
@@ -143,38 +155,50 @@ class HoldoutReport:
                 f"| {gap.task_id} | {gap.holdout:.3f} | "
                 f"{gap.holdout_ci[0]:.3f}-{gap.holdout_ci[1]:.3f} | "
                 f"{gap.validation:.3f} | {gap.gap:+.3f} | {gap.support} | "
-                f"{'measurable' if gap.measurable else readable_at(gap.support)} |"
+                f"{'enough to measure' if gap.measurable else readable_at(gap.support)} |"
             )
         lines.append("")
         lines += [
-            "Per task, precision and recall with their intervals:",
+            "## How often it is right, and how much it finds",
             "",
-            "| task | P | P 95% CI | R | R 95% CI | F1 |",
-            "| --- | --- | --- | --- | --- | --- |",
+            "**Right when it answers** is how often an answer it gave was correct. **Found** is how much "
+            "of what was there it picked up. A program can be right whenever it answers while missing most "
+            "of the cases, so both matter. **Combined** balances the two.",
+            "",
+            "**Counts** says what each row is about. A yes/no question is shown on its **yes** answers, "
+            "which is what its headline score measures. Counting both answers together flatters such a "
+            "question: a program that finds 6 of 14 liability caps, and says no correctly the rest of the "
+            "time, reads as 0.750 both ways when counted together, and 1.000 right / 0.429 found on the "
+            "answer anyone is asking about.",
+            "",
+            "| question | counts | right when it answers | range | found | range | combined |",
+            "| --- | --- | --- | --- | --- | --- | --- |",
         ]
         for task_id, metrics in self.result.tasks.items():
-            lines.append(
-                f"| {task_id} | {metrics.precision:.3f} | "
-                f"{metrics.precision_ci[0]:.3f}-{metrics.precision_ci[1]:.3f} | "
-                f"{metrics.recall:.3f} | {metrics.recall_ci[0]:.3f}-{metrics.recall_ci[1]:.3f} | "
-                f"{metrics.f1:.3f} |"
-            )
+            for scored_as, precision, precision_ci, recall, recall_ci, f1 in _reported_rows(metrics):
+                lines.append(
+                    f"| {task_id} | {scored_as} | {precision:.3f} | "
+                    f"{precision_ci[0]:.3f}-{precision_ci[1]:.3f} | "
+                    f"{recall:.3f} | {recall_ci[0]:.3f}-{recall_ci[1]:.3f} | "
+                    f"{f1:.3f} |"
+                )
         lines.append("")
         if self.large_gap_tasks:
             lines += [
-                "## Tasks with a large gap",
+                "## Questions that did much worse than while tuning",
                 "",
-                "These learned something specific to the validation split: "
+                "These scored far lower here than on the documents used to build the program, which means "
+                "what they learned was specific to those documents rather than to the task: "
                 + ", ".join(f"`{task_id}`" for task_id in self.large_gap_tasks)
-                + ".",
+                + ". Quote the number above, not the tuning one.",
                 "",
             ]
         if self.unmeasurable:
             lines += [
-                "## What this holdout cannot measure",
+                "## What these documents cannot tell you",
                 "",
-                "The rarest class in each of these tasks has too few examples in the holdout for the",
-                "number above to mean much. Do not quote them on their own.",
+                "Each of these questions has an answer that appears too rarely here for its number to mean",
+                "much. The number is still shown, but do not quote it on its own.",
                 "",
             ]
             for task_id in self.unmeasurable:
@@ -184,10 +208,10 @@ class HoldoutReport:
             lines.append("")
         if self.lock.was_overridden:
             lines += [
-                "## Holdout override",
+                "## These documents were used more than once",
                 "",
-                "This holdout has been evaluated more than once. Every number above is correspondingly",
-                "weaker as an out-of-sample estimate.",
+                "They were meant to be scored once. Each further use makes every number above a weaker",
+                "estimate of how the program behaves on documents it has never seen.",
                 "",
             ]
             for override in self.lock.overrides:
@@ -325,12 +349,170 @@ def write_report(project_dir: Path, sections: Sequence[str], title: str = "Proje
     header = [
         f"# {title}",
         "",
-        f"Generated {datetime.now(UTC).isoformat(timespec='seconds')} " f"by doc-harness {__version__}.",
+        "What was built, how well it works, and what still needs a person. Every number here comes from "
+        "the files linked at the end, which hold the same numbers in full detail.",
+        "",
+        f"Written by doc-harness {__version__} on {datetime.now(UTC).isoformat(timespec='seconds')}.",
         "",
     ]
-    path.write_text("\n".join(header) + "\n" + "\n\n".join(sections) + "\n", encoding="utf-8")
+    blocks = list(sections) + [artifact_links(project_dir)]
+    # regenerated every time, so anything written into REPORT.md by hand is lost; notes kept in
+    # their own file survive, which is why close carries them in rather than asking for trust
+    notes = project_dir / NOTES_FILE
+    if notes.exists() and notes.read_text(encoding="utf-8").strip():
+        blocks.append(f"## Notes\n\n{notes.read_text(encoding='utf-8').strip()}")
+    path.write_text("\n".join(header) + "\n" + "\n\n".join(blocks) + "\n", encoding="utf-8")
     logger.info("wrote %s", path)
     return path
+
+
+# what close links to, in reading order: the path, and why a reader would open it
+ARTIFACTS: tuple[tuple[str, str], ...] = (
+    ("PROMPT.md", "the prompt that shipped: instructions, questions and demonstrations"),
+    ("runs/holdout/metrics.json", "the holdout numbers this report quotes, per task and per class"),
+    ("runs/holdout/failures.md", "every holdout error, sampled per task"),
+    ("runs/baseline_report.md", "the three baselines the champion had to beat"),
+    ("runs/leaderboard.md", "one row per experiment: what changed, and what it scored"),
+    ("runs/champion.json", "which experiment shipped, and the program file it points at"),
+    ("runs/production/qa_report.md", "the production gates, and what was routed to review"),
+    ("runs/production/outputs.jsonl", "the answers for every document in the corpus"),
+    ("runs/spend.json", "what each paid step cost"),
+    ("decisions.md", "the human decisions behind these numbers, as they were made"),
+    ("data/annotation_rules.md", "the labeling rules the gold labels follow"),
+    ("data/labels.jsonl", "the gold labels"),
+    ("data/splits.json", "the train/validation/holdout assignment, and its seed"),
+    ("data/extraction_manifest.csv", "per document: pages, extractor, transcription, truncation"),
+)
+
+NOTES_FILE = "REPORT_NOTES.md"
+
+
+def _reported_rows(
+    metrics: Any,
+) -> list[tuple[str, float, tuple[float, float], float, tuple[float, float], float]]:
+    """Return the precision/recall rows to print for one task.
+
+    A yes/no task is reported on its positive answer, because that is what its headline F1
+    measures and what the question is asking about. Everything else is reported over all of
+    its answers, as the pooled counts.
+    """
+    if str(metrics.task_type) == "binary":
+        positive = metrics.classes.get("true")
+        if positive is not None:
+            precision_ci = wilson_interval(positive.tp, positive.tp + positive.fp)
+            return [("yes", positive.precision, precision_ci, positive.recall, positive.recall_ci, positive.f1)]
+    return [
+        (
+            "all answers",
+            metrics.precision,
+            metrics.precision_ci,
+            metrics.recall,
+            metrics.recall_ci,
+            metrics.f1,
+        )
+    ]
+
+
+def artifact_links(project_dir: Path) -> str:
+    """List the files this project wrote, so the numbers have something to click.
+
+    :param project_dir: The project root
+    :returns: A markdown section naming every artifact that exists
+    """
+    lines = ["## Where everything is", ""]
+    for relative, description in ARTIFACTS:
+        if (project_dir / relative).exists():
+            lines.append(f"- [`{relative}`]({relative}) -- {description}")
+    missing = [relative for relative, _ in ARTIFACTS if not (project_dir / relative).exists()]
+    if missing:
+        lines += ["", f"Not written by this project: {', '.join(f'`{name}`' for name in missing)}."]
+    return "\n".join(lines)
+
+
+def write_prompt(project_dir: Path, registry: Registry, program: Any, demo_chars: int = 600) -> Path:
+    """Write PROMPT.md: the shipped prompt as a person can read it.
+
+    The only other copy is a JSON string inside the compiled program, which is the artifact
+    people ask for most and the hardest one to find.
+
+    :param project_dir: The project root
+    :param registry: The parsed tasks.yaml
+    :param program: The compiled champion
+    :param demo_chars: How much of each demonstration's document to quote
+    :returns: The path written
+    """
+    from doc_harness.program import attribute_for
+
+    lines = [
+        "# The prompt that ships",
+        "",
+        f"Extracted from the compiled program by doc-harness {__version__} on "
+        f"{datetime.now(UTC).isoformat(timespec='seconds')}. Generated: edit `tasks.yaml` and re-compile, "
+        "never this file.",
+        "",
+    ]
+    for group, tasks in registry.groups().items():
+        predictor = getattr(program, attribute_for(group), None)
+        signature = getattr(predictor, "signature", None) or getattr(
+            getattr(predictor, "predict", None), "signature", None
+        )
+        lines += [f"## Predictor `{group}`", "", "### Instructions", ""]
+        instructions = getattr(signature, "instructions", "") if signature is not None else ""
+        lines += ["```", (instructions or "(none)").strip(), "```", "", "### Questions asked", ""]
+        for task in tasks:
+            described = getattr(signature, "output_fields", {}).get(task.id) if signature is not None else None
+            question = getattr(described, "description", None) or task.question
+            allowed = ", ".join(task.enum_members) if task.enum_members else ""
+            lines.append(f"**{task.id}** ({task.type}{', one of: ' + allowed if allowed else ''})")
+            lines += ["", "```", str(question).strip(), "```", ""]
+        demos = list(getattr(predictor, "demos", []) or [])
+        lines += [f"### Demonstrations ({len(demos)})", ""]
+        for index, demo in enumerate(demos, start=1):
+            values = demo.toDict() if hasattr(demo, "toDict") else dict(demo)
+            document = str(values.get("document", ""))
+            shortened = document[:demo_chars] + (" [... truncated ...]" if len(document) > demo_chars else "")
+            lines += [
+                f"#### Demonstration {index}",
+                "",
+                "Document:",
+                "",
+                "```",
+                shortened.strip(),
+                "```",
+                "",
+                "Answers:",
+                "",
+            ]
+            for task in tasks:
+                if task.id in values:
+                    lines.append(f"- `{task.id}`: {values[task.id]!r}")
+            lines.append("")
+    path = project_dir / "PROMPT.md"
+    path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    logger.info("wrote %s", path)
+    return path
+
+
+def holdout_aggregate(runs_dir: Path) -> float | None:
+    """Return the champion's holdout aggregate, for the ledger."""
+    path = runs_dir / "holdout" / "metrics.json"
+    if not path.exists():
+        return None
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return float(payload["aggregate"]["score"])
+
+
+def best_baseline(runs_dir: Path) -> tuple[str, float] | None:
+    """Return the best baseline and its validation aggregate, for the ledger's notes.
+
+    Validation, not holdout: the baselines are never run against the holdout, so there is no
+    holdout number for them to report, and inventing one would be worse than leaving it blank.
+    """
+    scored: list[tuple[str, float]] = []
+    for path in sorted(runs_dir.glob("baseline_*/metrics.json")):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        scored.append((path.parent.name, float(payload["aggregate"]["score"])))
+    return max(scored, key=lambda item: item[1]) if scored else None
 
 
 def append_ledger(ledger_path: Path, row: Mapping[str, Any]) -> None:

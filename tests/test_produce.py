@@ -226,8 +226,8 @@ def test_qa_report_says_when_gates_failed(tmp_path: Path, toy_registry: Registry
     write_qa_report(path, toy_registry, result, expected_documents=10)
     text = path.read_text(encoding="utf-8")
     assert "**FAIL**" in text
-    assert "do not hand these results over yet" in text
-    assert "random slice is not optional" in text
+    assert "Do not hand these results over until you know why" in text
+    assert "random sample is not optional" in text
     assert "| b | 1 | boom |" in text
 
 

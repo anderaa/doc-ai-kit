@@ -64,9 +64,12 @@ class BaselineReport:
     def to_markdown(self) -> str:
         """Render the baseline section of the report."""
         lines = [
-            "# Baselines",
+            "# What it is compared against",
             "",
-            "| baseline | aggregate | " + " | ".join(self.runs[0].result.per_task_primary) + " |",
+            "Three simple versions, built before any tuning, to show what the tuning was worth. Scores are "
+            "on the documents used for tuning, from 0 to 1.",
+            "",
+            "| version | score | " + " | ".join(self.runs[0].result.per_task_primary) + " |",
             "| --- | --- |" + " --- |" * len(self.runs[0].result.per_task_primary),
         ]
         for run in self.runs:
@@ -74,16 +77,18 @@ class BaselineReport:
             lines.append(f"| {run.name} | {run.score:.3f} | {per_task} |")
         lines += [
             "",
-            f"Best baseline: **{self.best.name}** at {self.best.score:.3f}. "
-            "A compiled program has to beat this on the holdout, or shipping the baseline is the honest move.",
+            f"Best of the three: **{self.best.name}**, at {self.best.score:.3f}. The tuned program has to "
+            "beat this on the set-aside documents. If it does not, the honest thing is to ship the simple "
+            "version instead.",
             "",
         ]
         if self.upstream_problems:
             lines += [
-                "## Tasks scoring near zero",
+                "## Questions scoring near zero",
                 "",
-                "These are upstream problems, not optimization problems. Check, in order: is the answer",
-                "present in the extracted text at all; is the question unambiguous; is the matcher correct.",
+                "No amount of tuning fixes these. Check three things, in this order: is the answer in the",
+                "extracted text at all; does the question have one clear reading; and is the rule that",
+                "decides whether an answer counts as correct doing the right thing?",
                 "",
             ]
             for task_id, value in sorted(self.upstream_problems.items(), key=lambda item: item[1]):

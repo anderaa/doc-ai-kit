@@ -525,6 +525,17 @@ def triage(
     return routes
 
 
+# what each review group is called in the report, in words a reader has not had explained
+ROUTE_LABELS = {
+    "transcribed_or_unread": "a page was read from an image, or not read at all",
+    "truncated": "the document was too long and was cut short",
+    "nulls_on_answered_tasks": "blank where most documents have an answer",
+    "low_confidence": "left the most questions blank",
+    "random_slice": "picked at random, to keep the estimate honest",
+    "failed": "no answer, after every attempt",
+}
+
+
 def write_qa_report(
     path: Path,
     registry: Registry,
@@ -534,12 +545,13 @@ def write_qa_report(
     """Write qa_report.md."""
     path.parent.mkdir(parents=True, exist_ok=True)
     lines = [
-        "# Production QA",
+        "# Checks on the full run",
         "",
-        f"{len(result.succeeded)} of {expected_documents} documents produced output; "
-        f"{len(result.failures)} failed every retry and are recorded as failures. "
-        f"{sum(1 for o in result.succeeded if o.via == 'batch')} came through the Batch API and "
-        f"{sum(1 for o in result.succeeded if o.via == 'live')} live.",
+        f"{len(result.succeeded)} of {expected_documents} documents came back with answers. "
+        f"{len(result.failures)} failed every attempt and are recorded as failures rather than dropped.",
+        "",
+        "Each check below looks for a sign that something went wrong across the whole run, rather than "
+        "in one document.",
         "",
         "| check | result | detail |",
         "| --- | --- | --- |",
@@ -547,19 +559,24 @@ def write_qa_report(
     lines += [check.to_markdown() for check in result.checks]
     lines += [
         "",
-        "**Gates "
-        + ("all passed." if result.all_passed else "did not all pass; do not hand these results over yet.")
+        "**"
+        + (
+            "Every check passed."
+            if result.all_passed
+            else "A check did not pass. Do not hand these results over until you know why."
+        )
         + "**",
         "",
-        "## Human review routes",
+        "## Documents for a person to read",
         "",
-        "The random slice is not optional. The four targeted routes select documents that are",
-        "already suspect, so a quality estimate built on them alone reads worse than the corpus is.",
+        "The first groups are documents there is already reason to doubt. The random sample is not "
+        "optional: judging quality from the doubtful ones alone makes the whole run look worse than it is.",
         "",
-        "| route | documents |",
+        "| why it was picked | documents |",
         "| --- | --- |",
     ]
     for name, doc_ids in result.triage.items():
+        name = ROUTE_LABELS.get(name, name)
         sample = ", ".join(doc_ids[:8]) + (f", and {len(doc_ids) - 8} more" if len(doc_ids) > 8 else "")
         lines.append(f"| {name} | {len(doc_ids)}{': ' + sample if doc_ids else ''} |")
     lines.append("")

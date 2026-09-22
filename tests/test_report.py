@@ -17,10 +17,15 @@ from doc_harness.program import build_program
 from doc_harness.registry import Registry
 from doc_harness.report import (
     LEDGER_COLUMNS,
+    NOTES_FILE,
     TaskGap,
     append_ledger,
+    artifact_links,
+    best_baseline,
+    holdout_aggregate,
     read_gaps,
     run_holdout,
+    write_prompt,
     write_report,
 )
 
@@ -141,8 +146,8 @@ def test_holdout_runs_once_and_writes_its_lock(
     assert (project / "runs" / "holdout" / "failures.md").exists()
     assert report.result.aggregate == pytest.approx(1.0)
     assert report.verdict == "within_ci"
-    assert "# Holdout" in report.to_markdown()
-    assert "Measured once" in report.to_markdown()
+    assert "# How well it works" in report.to_markdown()
+    assert "used once, at the end" in report.to_markdown()
 
 
 def test_second_holdout_refuses(project: Path, toy_registry: Registry, setup: tuple[list[Any], Any]) -> None:
@@ -179,9 +184,9 @@ def test_override_is_stamped_into_the_report(
             reason="the first run used stale labels",
         )
     markdown = report.to_markdown()
-    assert "Holdout override" in markdown
+    assert "used more than once" in markdown
     assert "stale labels" in markdown
-    assert "weaker as an out-of-sample estimate" in markdown
+    assert "a weaker\nestimate of how the program behaves" in markdown
 
 
 def test_unmeasurable_tasks_are_named_in_the_report(
@@ -203,7 +208,7 @@ def test_unmeasurable_tasks_are_named_in_the_report(
             toy_registry, config, metric, program, examples, project, 1.0, PERFECT, opened_by="holdout"
         )
     assert report.unmeasurable
-    assert "cannot measure" in report.to_markdown()
+    assert "cannot tell you" in report.to_markdown()
 
 
 def test_write_report_assembles_sections(tmp_path: Path) -> None:
@@ -228,3 +233,57 @@ def test_ledger_rejects_unknown_columns(tmp_path: Path) -> None:
     """A typo must not silently vanish into an unwritten column."""
     with pytest.raises(ValueError, match="unknown ledger column"):
         append_ledger(tmp_path / "ledger.csv", {"projct": "typo"})
+
+
+def test_the_report_links_to_every_artifact(tmp_path: Path) -> None:
+    """Reported from a real run: numbers with nothing to click."""
+    (tmp_path / "runs" / "holdout").mkdir(parents=True)
+    (tmp_path / "runs" / "holdout" / "metrics.json").write_text('{"aggregate": {"score": 0.822}}', encoding="utf-8")
+    (tmp_path / "decisions.md").write_text("decided", encoding="utf-8")
+    links = artifact_links(tmp_path)
+    assert "[`runs/holdout/metrics.json`](runs/holdout/metrics.json)" in links
+    assert "[`decisions.md`](decisions.md)" in links
+    assert "Not written by this project" in links and "`PROMPT.md`" in links
+
+    text = write_report(tmp_path, ["# Holdout\n\nsecond"], title="Toy").read_text(encoding="utf-8")
+    assert "## Where everything is" in text
+
+
+def test_hand_written_notes_survive_a_regenerated_report(tmp_path: Path) -> None:
+    """Reported from a real run: close regenerates REPORT.md and silently drops what was added."""
+    (tmp_path / NOTES_FILE).write_text("The cap clause task is not fit for automated use.", encoding="utf-8")
+    text = write_report(tmp_path, ["# Holdout\n\nsecond"], title="Toy").read_text(encoding="utf-8")
+    assert "## Notes" in text and "not fit for automated use" in text
+
+    again = write_report(tmp_path, ["# Holdout\n\nsecond"], title="Toy").read_text(encoding="utf-8")
+    assert again.count("not fit for automated use") == 1
+
+
+def test_the_shipped_prompt_is_written_as_markdown(
+    tmp_path: Path, toy_registry: Registry, setup: tuple[list[Any], Any]
+) -> None:
+    """Reported from a real run: the only copy was a JSON string inside the compiled program."""
+    examples, _answers = setup
+    program = build_program(toy_registry, instructions={"all": "Answer from the contract only."})
+    program.predict_all.demos = [examples[0]]
+    path = write_prompt(tmp_path, toy_registry, program)
+    text = path.read_text(encoding="utf-8")
+    assert path.name == "PROMPT.md"
+    assert "Answer from the contract only." in text
+    assert "**state** (multiclass, one of: CA, NY, TX)" in text
+    assert "Which state governs." in text
+    assert "### Demonstrations (1)" in text and "`state`:" in text
+
+
+def test_the_ledger_numbers_come_from_the_runs(tmp_path: Path) -> None:
+    """Reported from a real run: the columns were declared and never filled, so 0.822 went in by hand."""
+    runs = tmp_path / "runs"
+    (runs / "holdout").mkdir(parents=True)
+    (runs / "holdout" / "metrics.json").write_text('{"aggregate": {"score": 0.8221}}', encoding="utf-8")
+    assert holdout_aggregate(runs) == pytest.approx(0.8221)
+    assert holdout_aggregate(tmp_path / "empty") is None
+
+    for name, score in (("baseline_zero_shot", 0.61), ("baseline_bootstrap_few_shot", 0.74)):
+        (runs / name).mkdir()
+        (runs / name / "metrics.json").write_text(f'{{"aggregate": {{"score": {score}}}}}', encoding="utf-8")
+    assert best_baseline(runs) == ("baseline_bootstrap_few_shot", 0.74)

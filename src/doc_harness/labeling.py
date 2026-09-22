@@ -35,7 +35,7 @@ from typing import Any
 
 from doc_harness.dataset import DatasetError, LabelRecord
 from doc_harness.extract import doc_id_from_name
-from doc_harness.normalize import boolean, is_null, strip_wrapping_quotes
+from doc_harness.normalize import LEGAL_SUFFIXES, boolean, is_null, strip_wrapping_quotes
 from doc_harness.normalize import date as normalize_date
 from doc_harness.normalize import enum as normalize_enum
 from doc_harness.normalize import numeric as normalize_numeric
@@ -258,6 +258,7 @@ def parse_cell(task: Any, text: str, document: str) -> tuple[Any, list[str]]:
         items = [_unquote(item) for item in pieces]
         items = [item for item in items if item]
         if task_type is TaskType.EXTRACT_LIST:
+            warnings += _joined_entries(items)
             return items, warnings
         members = []
         for item in items:
@@ -311,6 +312,39 @@ def parse_cell(task: Any, text: str, document: str) -> tuple[Any, list[str]]:
             warnings.append("the passage appears more than once, and the first is used; paste a longer passage")
         return {"start": located.start, "end": located.end}, warnings
     raise CellError(f"no reader for task type {task_type}")
+
+
+# two entries typed into one cell: "Stryker Corporation and Conformis Inc" is one gold value
+# that nothing can ever match, and it caps the task's score without showing up as an error
+_JOINED = re.compile(r"\s+and\s+|\s+&\s+|\s*/\s*|,\s+", re.IGNORECASE)
+
+
+def _looks_like_a_name(part: str) -> bool:
+    """Return whether a fragment could stand alone as an entry, rather than being part of one.
+
+    "Johnson & Johnson" and "Procter and Gamble" are single names whose halves are single
+    words; "Conformis Inc" and "Jane Q. Smith" stand on their own.
+    """
+    tokens = part.split()
+    if len(tokens) < 2:
+        return False
+    words = part.casefold().replace(".", "").split()
+    if any(word in LEGAL_SUFFIXES for word in words):
+        return True
+    return sum(1 for token in tokens if token[:1].isupper()) >= 2
+
+
+def _joined_entries(items: Sequence[str]) -> list[str]:
+    """Warn about a cell that looks like several entries written as one."""
+    warnings: list[str] = []
+    for item in items:
+        parts = [part.strip() for part in _JOINED.split(item) if part.strip()]
+        if sum(1 for part in parts if _looks_like_a_name(part)) > 1:
+            warnings.append(
+                f"{item!r} may be more than one entry; separate them with '{LIST_SEPARATOR}' if so. "
+                "Two entries in one cell can never be matched, and cap this task's score"
+            )
+    return warnings
 
 
 def _unquote(text: str) -> str:

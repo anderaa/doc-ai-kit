@@ -11,6 +11,7 @@ import importlib
 import importlib.util
 import logging
 import sys
+import threading
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, TypeVar
@@ -109,6 +110,8 @@ def registered_names() -> dict[str, list[str]]:
 _BUILTIN_MODULES = ("doc_harness.normalize", "doc_harness.match", "doc_harness.extract")
 
 _builtins_loaded = False
+# re-entrant: importing a built-in module must not deadlock if it looks a hook up in turn
+_builtins_lock = threading.RLock()
 
 
 def _ensure_builtins() -> None:
@@ -116,13 +119,18 @@ def _ensure_builtins() -> None:
 
     Deferred rather than imported at module scope so that :mod:`doc_harness.hooks` stays
     free of cycles: the built-ins import this module to register themselves.
+
+    Under a lock, and the flag is set only once the imports are done. Set beforehand, a
+    second thread arriving mid-import saw "already loaded" and looked up an empty registry:
+    every worker in a threaded scoring run then failed with "unknown matcher: (none registered)".
     """
     global _builtins_loaded
-    if _builtins_loaded:
-        return
-    _builtins_loaded = True
-    for module in _BUILTIN_MODULES:
-        importlib.import_module(module)
+    with _builtins_lock:
+        if _builtins_loaded:
+            return
+        for module in _BUILTIN_MODULES:
+            importlib.import_module(module)
+        _builtins_loaded = True
 
 
 def load_project_customizations(project_dir: Path) -> list[str]:

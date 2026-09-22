@@ -11,6 +11,7 @@ answer can be a reason rather than a shrug.
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
@@ -25,7 +26,7 @@ from doc_harness import __version__
 from doc_harness.adjudicate import adjudicate as run_adjudication
 from doc_harness.adjudicate import write_adjudication
 from doc_harness.baseline import run_baselines
-from doc_harness.config import Config
+from doc_harness.config import Config, add_excluded_classes
 from doc_harness.dataset import (
     build_examples,
     load_labels,
@@ -57,21 +58,29 @@ from doc_harness.labeling import (
     write_sheet,
 )
 from doc_harness.metric import build_metric
-from doc_harness.optimize import require_champion, run_experiment
+from doc_harness.optimize import read_champion, require_champion, run_experiment
 from doc_harness.produce import ProductionResult, produce, run_qa, triage, write_outputs, write_qa_report
 from doc_harness.program import build_program, load_program, task_lm
 from doc_harness.registry import Registry
-from doc_harness.report import append_ledger, run_holdout, write_report
+from doc_harness.report import (
+    NOTES_FILE,
+    append_ledger,
+    best_baseline,
+    holdout_aggregate,
+    run_holdout,
+    write_prompt,
+    write_report,
+)
 from doc_harness.scaffold_writer import HARNESS_REPO, PIN_MODES, ScaffoldOptions, create_project
 from doc_harness.spend import check_budget, record_spend, totals
 from doc_harness.splits import (
     SUPPORT_OPTIONS,
-    below_floor,
     class_supports,
     holdout_share_for,
     make_splits,
     support_floor_prompt,
 )
+from doc_harness.splits import below_floor as classes_below_floor
 from doc_harness.state import derive
 
 logger = logging.getLogger(__name__)
@@ -507,10 +516,19 @@ def audit_labels(project: Project) -> None:
 
 
 @cli.command("make-splits")
+@click.option(
+    "--below-floor",
+    type=click.Choice([name for name, _ in SUPPORT_OPTIONS]),
+    default=None,
+    help="Answer every class below the support floor the same way, instead of one prompt each.",
+)
+@click.option("--rationale", default="", help="The reason recorded with --below-floor.")
 @click.option("--non-interactive", is_flag=True, help="Refuse rather than prompt for support-floor decisions.")
 @click.option("--force", is_flag=True, help="Overwrite an existing splits.json.")
 @pass_project
-def make_splits_command(project: Project, non_interactive: bool, force: bool) -> None:
+def make_splits_command(
+    project: Project, below_floor: str | None, rationale: str, non_interactive: bool, force: bool
+) -> None:
     """Create the fixed train/validation/holdout assignment."""
     project.load_customizations()
     splits_path = project.data / "splits.json"
@@ -524,34 +542,58 @@ def make_splits_command(project: Project, non_interactive: bool, force: bool) ->
     floor = project.config.splits.support_floor
     holdout = _planned_holdout(project, records)
 
-    rare = below_floor(class_supports(project.registry, records), floor)
+    rare = classes_below_floor(class_supports(project.registry, records), floor)
+    unmeasured: dict[str, list[str]] = {}
     if rare:
         click.echo(f"{len(rare)} class(es) fall below the support floor of {floor}.\n")
-        for support in rare:
-            click.echo(support_floor_prompt(support, floor))
-            if non_interactive:
-                raise click.ClickException(
-                    "a class below the support floor needs a human decision; re-run without "
-                    "--non-interactive, or record the decision in config.yaml first"
-                )
-            choice = click.prompt(
-                "  choice",
-                type=click.Choice([name for name, _ in SUPPORT_OPTIONS]),
-                show_choices=True,
-            )
-            rationale = click.prompt("  rationale", default="", show_default=False)
+        if below_floor:
+            # one answer for all of them: sixty prompts produce sixty blank rationales
+            for support in rare:
+                click.echo(f"  {support.task_id}/{support.label}: {support.count} example(s), {support.readable_as}")
             project.record_decision(
-                f"support floor: {support.task_id}/{support.label}",
-                f"- Labeled examples: **{support.count}** ({support.readable_as})\n"
-                f"- Choice: **{choice}**\n"
-                f"- Rationale: {rationale or '(none given)'}",
+                f"support floor: {len(rare)} class(es), answered together",
+                f"- Choice for every class below the floor of {floor}: **{below_floor}**\n"
+                f"- Rationale: {rationale or '(none given)'}\n"
+                + "\n".join(f"  - {s.task_id}/{s.label}: {s.count} example(s)" for s in rare),
             )
-            if choice == "report_unmeasured":
-                click.echo(
-                    f"  Add {support.label!r} to metric.excluded_classes['{support.task_id}'] in config.yaml "
-                    "so it leaves the optimization target while staying in the report."
+            if below_floor == "report_unmeasured":
+                for support in rare:
+                    unmeasured.setdefault(support.task_id, []).append(support.label)
+        else:
+            for support in rare:
+                click.echo(support_floor_prompt(support, floor))
+                if non_interactive:
+                    raise click.ClickException(
+                        "a class below the support floor needs a human decision; re-run without "
+                        "--non-interactive, answer them together with --below-floor, or record the "
+                        "decision in config.yaml first"
+                    )
+                choice = click.prompt(
+                    "  choice",
+                    type=click.Choice([name for name, _ in SUPPORT_OPTIONS]),
+                    show_choices=True,
                 )
-            click.echo("")
+                reason = click.prompt("  rationale", default="", show_default=False)
+                project.record_decision(
+                    f"support floor: {support.task_id}/{support.label}",
+                    f"- Labeled examples: **{support.count}** ({support.readable_as})\n"
+                    f"- Choice: **{choice}**\n"
+                    f"- Rationale: {reason or '(none given)'}",
+                )
+                if choice == "report_unmeasured":
+                    unmeasured.setdefault(support.task_id, []).append(support.label)
+                click.echo("")
+    if unmeasured:
+        # written into config.yaml, not printed for a human to paste: a decision that never
+        # reaches the file is a decision that did not happen
+        merged = add_excluded_classes(project.directory / "config.yaml", unmeasured)
+        counted = sum(len(labels) for labels in unmeasured.values())
+        click.echo(
+            f"Recorded {counted} class(es) in metric.excluded_classes in config.yaml: they leave the "
+            f"optimization target and stay in the report. Now excluded: "
+            + "; ".join(f"{task_id} [{', '.join(labels)}]" for task_id, labels in sorted(merged.items()))
+            + "\n"
+        )
 
     splits = make_splits(project.registry, records, seed=project.config.splits.seed, holdout=holdout)
     write_splits(splits_path, splits)
@@ -855,7 +897,12 @@ def adjudicate(project: Project, run_id: str) -> None:
 @cli.command()
 @click.option("--labeling-hours", type=float, default=None, help="Hours spent labeling, for the ledger.")
 @click.option("--cost-usd", type=float, default=None, help="Total spend; taken from runs/spend.json if omitted.")
-@click.option("--ledger", type=click.Path(path_type=Path), default=None, help="Path to the shared ledger.csv.")
+@click.option(
+    "--ledger",
+    type=click.Path(path_type=Path),
+    default=lambda: os.environ.get("DOC_HARNESS_LEDGER"),
+    help="Path to the shared ledger.csv; defaults to $DOC_HARNESS_LEDGER. Without it, no row is written.",
+)
 @pass_project
 def close(project: Project, labeling_hours: float | None, cost_usd: float | None, ledger: Path | None) -> None:
     """Write REPORT.md and append this project to the shared ledger."""
@@ -872,26 +919,60 @@ def close(project: Project, labeling_hours: float | None, cost_usd: float | None
     if not sections:
         raise click.ClickException("nothing to report yet: run the baselines, the holdout and production first")
 
-    report_path = write_report(project.directory, sections, title=project.directory.name)
-    click.echo(f"Wrote {report_path}.")
-
-    if ledger is not None:
-        records = load_labels(project.data / "labels.jsonl")
-        append_ledger(
-            ledger,
-            {
-                "closed_at": datetime.now(UTC).isoformat(timespec="seconds"),
-                "project": project.directory.name,
-                "harness_version": __version__,
-                "task_types": ",".join(sorted({str(task.type) for task in project.registry})),
-                "n_documents": len(list((project.data / "text").glob("*.md"))),
-                "k_labeled": len(records),
-                "labeling_hours": labeling_hours if labeling_hours is not None else "",
-                # from the spend ledger unless given: measured beats remembered
-                "cost_usd": cost_usd if cost_usd is not None else (totals(project.runs)["usd"] or ""),
-            },
+    champion = read_champion(project.runs)
+    if champion is not None and Path(champion["program"]).exists():
+        program = load_program(
+            project.registry,
+            Path(champion["program"]),
+            module_type=str(champion.get("module") or project.config.optimization.module),
         )
-        click.echo(f"Appended to {ledger}.")
+        click.echo(f"Wrote {write_prompt(project.directory, project.registry, program)}.")
+    else:
+        click.echo("No champion is pinned, so PROMPT.md was not written.")
+
+    report_path = write_report(project.directory, sections, title=project.directory.name)
+    click.echo(f"Wrote {report_path}, with a link to every artifact this project produced.")
+    if not (project.directory / NOTES_FILE).exists():
+        click.echo(
+            f"REPORT.md is regenerated on every close, so anything written into it by hand is lost. "
+            f"Put such notes in {NOTES_FILE} and close appends them."
+        )
+
+    if ledger is None:
+        click.echo(
+            "No row was appended to any ledger: pass --ledger path/to/ledger.csv to record this project "
+            "alongside the others, or set DOC_HARNESS_LEDGER."
+        )
+        return
+    records = load_labels(project.data / "labels.jsonl")
+    baseline = best_baseline(project.runs)
+    notes = f"champion {champion['exp_id']}" if champion else ""
+    if baseline:
+        # validation, because the baselines are never measured on the holdout
+        notes = f"{notes}; best baseline {baseline[0]} {baseline[1]:.3f} on validation".lstrip("; ")
+    append_ledger(
+        ledger,
+        {
+            "closed_at": datetime.now(UTC).isoformat(timespec="seconds"),
+            "project": project.directory.name,
+            "harness_version": __version__,
+            "task_types": ",".join(sorted({str(task.type) for task in project.registry})),
+            "n_documents": len(list((project.data / "text").glob("*.md"))),
+            "k_labeled": len(records),
+            # measured, not remembered: the holdout reading and the spend ledger
+            "compiled_holdout": _blank_if_none(holdout_aggregate(project.runs)),
+            "baseline_holdout": "",
+            "labeling_hours": labeling_hours if labeling_hours is not None else "",
+            "cost_usd": cost_usd if cost_usd is not None else (totals(project.runs)["usd"] or ""),
+            "notes": notes,
+        },
+    )
+    click.echo(f"Appended to {ledger}.")
+
+
+def _blank_if_none(value: float | None) -> Any:
+    """Return a number for the ledger, or an empty cell when it was never measured."""
+    return "" if value is None else round(value, 4)
 
 
 @click.command()

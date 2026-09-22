@@ -11,7 +11,8 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from collections.abc import Mapping
+import re
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, Literal
 
@@ -19,6 +20,9 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 logger = logging.getLogger(__name__)
+
+# the metric.excluded_classes key, wherever it sits in the file
+_EXCLUDED_KEY = re.compile(r"^(\s*)excluded_classes:")
 
 
 class ConfigError(ValueError):
@@ -287,6 +291,45 @@ class BudgetConfig(_Strict):
 
     max_usd: float | None = Field(default=None, gt=0.0)
     prices: dict[str, ModelPrice] = Field(default_factory=dict)
+
+
+def add_excluded_classes(path: Path, additions: Mapping[str, Sequence[str]]) -> dict[str, list[str]]:
+    """Add classes to ``metric.excluded_classes`` in config.yaml, keeping the file's comments.
+
+    Written by the harness rather than printed for a human to paste: make-splits can produce
+    sixty of these lines, and a decision recorded in decisions.md but never applied to the
+    config is a decision that did not happen.
+
+    :param path: The project's config.yaml
+    :param additions: Per task, the classes to exclude from the optimization target
+    :returns: The merged mapping now in the file
+    :raises ConfigError: If the file has no ``excluded_classes`` key to write into
+    """
+    text = path.read_text(encoding="utf-8")
+    current = Config.from_yaml(path).metric.excluded_classes
+    merged = {task_id: sorted(set(current.get(task_id, [])) | set(labels)) for task_id, labels in additions.items()}
+    for task_id, labels in current.items():
+        merged.setdefault(task_id, sorted(labels))
+
+    lines = text.splitlines()
+    start = next((index for index, line in enumerate(lines) if _EXCLUDED_KEY.match(line)), None)
+    if start is None:
+        raise ConfigError(f"{path} has no metric.excluded_classes key to write into")
+    indent = _EXCLUDED_KEY.match(lines[start]).group(1)  # type: ignore[union-attr]
+    end = start + 1
+    while end < len(lines) and (not lines[end].strip() or lines[end].startswith(indent + " ")):
+        # the block's own entries, and any blank line inside it
+        if lines[end].strip() and not lines[end].startswith(indent + " "):
+            break
+        if not lines[end].strip():
+            break
+        end += 1
+    block = [f"{indent}excluded_classes:"] if merged else [f"{indent}excluded_classes: {{}}"]
+    for task_id in sorted(merged):
+        block.append(f"{indent}  {task_id}: [{', '.join(merged[task_id])}]")
+    path.write_text("\n".join([*lines[:start], *block, *lines[end:]]) + "\n", encoding="utf-8")
+    logger.info("recorded %d excluded class(es) in %s", sum(len(labels) for labels in merged.values()), path)
+    return merged
 
 
 class Config(_Strict):

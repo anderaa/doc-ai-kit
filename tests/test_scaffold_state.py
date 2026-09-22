@@ -364,3 +364,22 @@ def test_status_counts_pdfs_whatever_the_case_of_their_extension(project: Path) 
     (pdf_dir / "notes.docx").write_bytes(b"not a pdf")
     detail = next(step.detail for step in derive(project).steps if step.name == "text extracted")
     assert detail == "0 of 3 PDF(s) cached"
+
+
+def test_excluded_classes_are_written_into_config_keeping_its_comments(project: Path) -> None:
+    """Reported from a real run: make-splits printed 61 lines for a human to paste."""
+    from doc_harness.config import Config, add_excluded_classes
+
+    path = project / "config.yaml"
+    before = path.read_text(encoding="utf-8")
+    merged = add_excluded_classes(path, {"filing_state": ["NV", "AK"], "products": ["support"]})
+    assert merged == {"filing_state": ["AK", "NV"], "products": ["support"]}
+    assert add_excluded_classes(path, {"filing_state": ["WY"]})["filing_state"] == ["AK", "NV", "WY"]
+    assert Config.from_yaml(path).metric.excluded_classes == {
+        "filing_state": ["AK", "NV", "WY"],
+        "products": ["support"],
+    }
+    after = path.read_text(encoding="utf-8")
+    assert "# the cost ceiling for this engagement" in after, "comments elsewhere survived"
+    assert after.count("excluded_classes:") == 1
+    assert len(after.splitlines()) >= len(before.splitlines())

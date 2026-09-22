@@ -506,3 +506,25 @@ def test_rows_are_named_by_the_real_file_name(tmp_path: Path, fixtures_dir: Path
     workbook["labels"]["A2"].value = "  Sonos, Inc. - Manufacturing Agreement .PDF "
     workbook.save(path)
     assert [row.doc_id for row in read_sheet(path, registry)] == ["Sonos, Inc. - Manufacturing Agreement"]
+
+
+@pytest.mark.parametrize(
+    "cell,warns",
+    [
+        ("Stryker Corporation and Conformis Inc", True),
+        ("Jane Q. Smith and Omar Haddad", True),
+        ("Contoso LLC / Fabrikam Industries, Inc.", True),
+        ("Jane Q. Smith; Omar Haddad", False),
+        ("Johnson & Johnson", False),
+        ("Procter and Gamble", False),
+        ("Aduro Biotech, Inc.", False),
+        ("Smith & Hartley Ltd.", False),
+    ],
+)
+def test_two_entries_in_one_cell_are_flagged(registry: Registry, cell: str, warns: bool) -> None:
+    """Reported from a real run: two names in one cell capped that task at 0.92, silently.
+
+    The warning has to stay quiet on ordinary names, or it teaches people to ignore warnings.
+    """
+    _value, warnings = parse_cell(registry.by_id("signatories"), cell, DOCUMENT)
+    assert bool(warnings) is warns, warnings

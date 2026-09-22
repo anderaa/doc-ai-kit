@@ -135,7 +135,7 @@ def test_run_baselines_records_three(
     assert payload["metadata"]["baseline"] == ZERO_SHOT
     assert payload["metadata"]["config_hash"]
     assert payload["metadata"]["instructions"]
-    assert "Best baseline" in report.to_markdown()
+    assert "Best of the three" in report.to_markdown()
 
 
 def test_few_shot_is_skipped_loudly_without_demos(
@@ -177,7 +177,7 @@ def test_upstream_problems_are_surfaced(
             runs_dir=tmp_path / "runs",
         )
     assert "number" in report.upstream_problems
-    assert "Tasks scoring near zero" in report.to_markdown()
+    assert "Questions scoring near zero" in report.to_markdown()
 
 
 def test_find_upstream_problems_uses_the_best_baseline() -> None:

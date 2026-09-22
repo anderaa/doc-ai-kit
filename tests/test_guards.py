@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
+from typing import Any
+from unittest import mock
 
 import pytest
 
@@ -136,3 +139,52 @@ def test_readonly_does_not_mask_the_original_error(tmp_path: Path, caplog: pytes
         path.write_text("b", encoding="utf-8")
         raise ZeroDivisionError("the real failure")
     assert "also modified during the failed run" in caplog.text
+
+
+def test_builtin_hooks_are_registered_before_any_thread_sees_them() -> None:
+    """Found while rendering a report: every worker failed with "(none registered)".
+
+    The flag was set before the imports ran, so a second thread arriving mid-import skipped
+    the import and looked up an empty registry.
+    """
+    import importlib
+    import threading
+
+    from doc_harness import hooks
+
+    real_import = importlib.import_module
+    started = threading.Event()
+
+    def slow_import(name: str, package: str | None = None) -> Any:
+        if name == "doc_harness.normalize":
+            started.set()
+            time.sleep(0.05)
+            # an import that has already run registers nothing the second time, so the
+            # registry is refilled here to stand in for the real import's side effect
+            hooks._MATCHERS.update(saved_matchers)
+        return real_import(name, package)
+
+    saved_matchers = dict(hooks._MATCHERS)
+    errors: list[Exception] = []
+
+    def look_up() -> None:
+        try:
+            hooks.get_matcher("identity")
+        except Exception as exc:  # noqa: BLE001 - recorded for the assertion
+            errors.append(exc)
+
+    try:
+        hooks._builtins_loaded = False
+        hooks._MATCHERS.clear()
+        with mock.patch.object(importlib, "import_module", slow_import):
+            first = threading.Thread(target=look_up)
+            first.start()
+            started.wait(timeout=1)
+            second = threading.Thread(target=look_up)
+            second.start()
+            first.join()
+            second.join()
+        assert not errors, errors
+    finally:
+        hooks._MATCHERS.update(saved_matchers)
+        hooks._builtins_loaded = True

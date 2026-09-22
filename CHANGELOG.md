@@ -4,6 +4,42 @@ Projects pin one exact harness version. Read the entry for a version before movi
 project onto it: some releases change how answers are scored, and a number measured under
 one version is not comparable with a number measured under another.
 
+## Unreleased
+
+**Does not change scores or prompts.** From the first real project's second round of reports.
+
+- **`close` writes `PROMPT.md`**: the shipped prompt as a person can read it -- instructions,
+  each task's question, and the demonstrations, with long documents shortened. Until now the
+  only copy was a JSON string inside the compiled program.
+- **`REPORT.md` ends with a link to every artifact the project produced**, so the numbers have
+  something to click: the holdout metrics, `failures.md`, the leaderboard, the QA report, the
+  outputs, the spend ledger, the decisions, the labels and the splits.
+- **Hand-written notes survive.** `REPORT.md` is regenerated on every close; `REPORT_NOTES.md`
+  is appended under a **Notes** heading, and close says so when that file does not exist.
+- **`close` fills `compiled_holdout`** from the holdout run, and records the champion and the
+  best baseline's validation score in the ledger's notes. `baseline_holdout` stays empty,
+  because the baselines are never measured on the holdout and inventing a number there would
+  be worse than leaving it blank. `--ledger` defaults to `$DOC_HARNESS_LEDGER`, and without
+  either, close says no row was written instead of printing "Wrote REPORT.md" and doing nothing.
+- **`make-splits --below-floor CHOICE --rationale TEXT`** answers every class below the support
+  floor at once: one recorded decision naming them all, rather than sixty prompts and sixty
+  blank rationales. A `report_unmeasured` choice is **written into `metric.excluded_classes` in
+  `config.yaml`**, comments intact, instead of printing lines for a human to paste.
+- **A yes/no question is reported on its "yes" answers.** The per-question table pooled both
+  answers, so a program that found 6 of 14 liability caps and said no correctly the rest of the
+  time read as 0.750 right / 0.750 found, beside a headline of 0.600. It now shows 1.000 /
+  0.429, matching the headline, and every row says what it counts.
+- **The generated report is written for a reader who did not build the program.** Plain headings
+  and plain words: "How well it works", "How often it is right, and how much it finds",
+  "Documents for a person to read". Each table says what its columns mean, and the review groups
+  are named in words rather than as internal labels.
+- **Built-in normalizers and matchers register safely under threads.** The "already loaded" flag
+  was set before the imports ran, so a second thread arriving mid-import looked up an empty
+  registry: every worker in a threaded run could fail with "unknown matcher: (none registered)".
+- **`import-labels` warns when one cell holds two entries**, e.g. `Stryker Corporation and
+  Conformis Inc` in a list column. Such a value can never be matched and silently caps the
+  task's score. The check stays quiet on ordinary names like `Johnson & Johnson`.
+
 ## 0.1.9
 
 **Changes scores on classification tasks whose classes are all below the support floor**, where
