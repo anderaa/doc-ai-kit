@@ -28,6 +28,8 @@ def pytest_configure(config: pytest.Config) -> None:
     """Silence the SWIG deprecation warnings PyMuPDF's bindings emit on import."""
     config.addinivalue_line("filterwarnings", "ignore:builtin type Swig.*:DeprecationWarning")
     config.addinivalue_line("filterwarnings", "ignore:builtin type swigvarlink.*:DeprecationWarning")
+    # emitted from inside LiteLLM's own type definitions; nothing here can act on it
+    config.addinivalue_line("filterwarnings", "ignore:Item .* is using the `ReadOnly` qualifier:UserWarning")
 
 
 @pytest.fixture

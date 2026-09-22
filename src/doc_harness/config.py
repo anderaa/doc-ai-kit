@@ -200,6 +200,10 @@ class ProductionConfig(_Strict):
     max_retries: int = Field(default=3, ge=0)
     batch_size: int = Field(default=32, ge=1)
     num_threads: int = Field(default=8, ge=1)
+    # submit through the Message Batches API: half the price, finished within a day and
+    # usually within the hour. Used for Anthropic models; anything else runs live
+    use_batch_api: bool = True
+    batch_poll_seconds: int = Field(default=60, ge=1)
     spot_check_sample: int = Field(default=50, ge=0)
     max_schema_failure_rate: float = Field(default=0.005, ge=0.0, le=1.0)
 

@@ -61,6 +61,10 @@ failure is silent -- the numbers keep going up while the measurement stops meani
   writes rules keyed to individual documents that die on the holdout.
 - **Every class gets a demonstration.** Bootstrapped selection otherwise drops rare classes
   and the compiled program behaves as if they do not exist.
+- **Production runs through the Batch API, unchanged.** Requests are captured from the live
+  path at the point of sending, and replies go through the live path's own parser, so batching
+  halves the price and changes nothing else. Batch ids are saved before any waiting, so an
+  interrupted run collects what it paid for instead of paying again.
 - **Every run saves its predictions.** Fixing a matcher and re-measuring costs nothing
   (`doc-harness rescore`), so nobody is tempted to leave the bug in to avoid paying again.
 - **Threshold decisions are surfaced, not buried.** `doc-harness adjudicate` lists every call a
@@ -114,13 +118,3 @@ Cutting a release means bumping `version` in `pyproject.toml` and pushing a matc
 **pyenv and pip-tools, not uv.** BUILD.md §9 assumes `uv tool install` / `uvx`. The harness
 locks with `pip-compile` and projects use a pyenv virtualenv instead. Nothing else changes:
 the pin is still exact and the lock is still committed.
-
-
-
-**Production uses concurrent requests, not a provider Batch API.** BUILD.md asks for the
-Batch API. Going through DSPy's adapters is what keeps typed parsing and the normalizers
-identical between validation and production, and a provider batch endpoint would mean
-bypassing them and reimplementing the parsing separately -- which is precisely the kind of
-divergence the rest of the design exists to prevent. The run is checkpointed and resumable,
-and `runs/production/raw/{doc_id}.json` is written before post-processing, so a batch backend
-can be dropped in behind the same checkpoint format when the tradeoff is worth taking.

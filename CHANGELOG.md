@@ -4,6 +4,19 @@ Projects pin one exact harness version. Read the entry for a version before movi
 project onto it: some releases change how answers are scored, and a number measured under
 one version is not comparable with a number measured under another.
 
+## Unreleased
+
+- **Production runs through the Message Batches API** for Anthropic models, at half the
+  price. Requests are captured from the live path at the moment of sending, so a batch
+  request is the live request by construction, and replies are parsed by the live path's own
+  post-processing and merge. A document the batch cannot deliver -- an errored or expired
+  request, an unreadable reply -- falls back to a live request with the usual retries. Batch
+  ids are written to disk before any waiting, so an interrupted run collects the batches it
+  already paid for. `production.use_batch_api` (default true) and `batch_poll_seconds`
+  control it; other providers run live. Each checkpoint records which way its answer came
+  and keeps the model's raw reply, and `qa_report.md` counts both routes.
+- Adds the `anthropic` SDK as a dependency.
+
 ## 0.1.4
 
 **Changes scores and the prompt** for span tasks, changes the format of `outputs.jsonl`, and

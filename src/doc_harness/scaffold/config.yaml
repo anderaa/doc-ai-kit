@@ -79,6 +79,11 @@ production:
   max_retries: 3
   batch_size: 32
   num_threads: 8
+  # submit through the Message Batches API: half the price, usually done within the hour and
+  # always within a day. Anthropic models only; anything else runs live. A document the batch
+  # cannot deliver falls back to a live request, with the usual retries
+  use_batch_api: true
+  batch_poll_seconds: 60
   spot_check_sample: 50
   max_schema_failure_rate: 0.005
 

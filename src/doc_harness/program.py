@@ -77,7 +77,7 @@ def build_program(
             self.span_tasks = {task.id for task in registry if TaskType(task.type) is TaskType.SPAN}
             self.group_tasks = {group: [task.id for task in tasks] for group, tasks in registry.groups().items()}
             for group, predictor in predictors.items():
-                setattr(self, _attribute_for(group), predictor)
+                setattr(self, attribute_for(group), predictor)
 
         def forward(self, **kwargs: Any) -> Any:
             """Run every group's predictor and merge their outputs into one prediction.
@@ -86,13 +86,25 @@ def build_program(
             rather than coming back null, so a failure is never scored as an abstention.
             """
             document = kwargs[INPUT_FIELD]
-            merged: dict[str, Any] = {}
+            replies: dict[str, Any] = {}
             with dspy.context(adapter=strict_version_of(dspy.settings.adapter)):
-                for group, task_ids in self.group_tasks.items():
-                    predictor = getattr(self, _attribute_for(group))
-                    prediction = predictor(**{INPUT_FIELD: document})
-                    for task_id in task_ids:
-                        merged[task_id] = getattr(prediction, task_id, None)
+                for group in self.group_tasks:
+                    replies[group] = getattr(self, attribute_for(group))(**{INPUT_FIELD: document})
+            return self.assemble(document, replies)
+
+        def assemble(self, document: str, replies: Mapping[str, Any]) -> Any:
+            """Merge each group's parsed reply into one prediction, placing any quoted spans.
+
+            Shared by the live path and the batch path, so a reply means the same thing
+            however it arrived.
+            """
+            merged: dict[str, Any] = {}
+            for group, task_ids in self.group_tasks.items():
+                reply = replies[group]
+                for task_id in task_ids:
+                    merged[task_id] = (
+                        reply.get(task_id) if isinstance(reply, Mapping) else getattr(reply, task_id, None)
+                    )
             for task_id in self.span_tasks:
                 merged[task_id] = _quote_to_span(merged[task_id], document)
             return dspy.Prediction(**merged)
@@ -123,7 +135,7 @@ def _quote_to_span(value: Any, document: str) -> Any:
     return located if located is not None else value
 
 
-def _attribute_for(group: str) -> str:
+def attribute_for(group: str) -> str:
     """Return the attribute name a group's predictor is stored under.
 
     DSPy discovers predictors by walking module attributes, so the name has to be a valid

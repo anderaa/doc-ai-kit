@@ -22,13 +22,15 @@ import csv
 import json
 import logging
 import random
-from collections.abc import Mapping, Sequence
+import time
+from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from doc_harness.batch import STATE_FILE, run_batches
 from doc_harness.config import Config
 from doc_harness.evaluate import is_abstention, to_json_value
 from doc_harness.metric import get_field
@@ -58,6 +60,10 @@ class DocumentOutcome:
     values: dict[str, Any] = field(default_factory=dict)
     error: str = ""
     attempts: int = 1
+    # "batch" or "live": how the answer arrived, so the QA report can say
+    via: str = "live"
+    # the model's reply text per predictor group, kept before any post-processing
+    raw: dict[str, str] = field(default_factory=dict)
 
     @property
     def ok(self) -> bool:
@@ -75,6 +81,8 @@ class DocumentOutcome:
             "values": {task_id: to_json_value(value) for task_id, value in self.values.items()},
             "error": self.error,
             "attempts": self.attempts,
+            "via": self.via,
+            "raw": self.raw,
             "at": datetime.now(UTC).isoformat(timespec="seconds"),
         }
 
@@ -120,6 +128,13 @@ def _raw_path(raw_dir: Path, doc_id: str) -> Path:
     return raw_dir / f"{doc_id}.json"
 
 
+def _anthropic_client() -> Any:
+    """Build the Anthropic client from the environment's credentials."""
+    import anthropic
+
+    return anthropic.Anthropic()
+
+
 def _load_checkpoint(raw_dir: Path, doc_id: str) -> DocumentOutcome | None:
     """Read one document's checkpointed response, if the run already produced it."""
     path = _raw_path(raw_dir, doc_id)
@@ -131,6 +146,8 @@ def _load_checkpoint(raw_dir: Path, doc_id: str) -> DocumentOutcome | None:
         values=dict(data.get("values", {})),
         error=str(data.get("error", "")),
         attempts=int(data.get("attempts", 1)),
+        via=str(data.get("via", "live")),
+        raw=dict(data.get("raw", {})),
     )
     # a checkpointed failure is retried; a checkpointed success is never paid for twice
     return outcome if outcome.ok else None
@@ -157,6 +174,17 @@ def _run_one(program: Any, registry: Registry, doc_id: str, text: str, max_retri
     return DocumentOutcome(doc_id=doc_id, error=last_error, attempts=max_retries + 1)
 
 
+def _batch_applies(config: Config, program: Any) -> bool:
+    """Return whether this run can go through the Message Batches API."""
+    if not config.production.use_batch_api:
+        return False
+    if not (config.models.task or "").startswith("anthropic/"):
+        logger.info("the Batch API is Anthropic's; %s runs live", config.models.task)
+        return False
+    # the batch path drives the program's own predictors and merge
+    return hasattr(program, "group_tasks") and hasattr(program, "assemble")
+
+
 def produce(
     registry: Registry,
     config: Config,
@@ -164,6 +192,8 @@ def produce(
     texts: Mapping[str, str],
     project_dir: Path,
     resume: bool = True,
+    batch_client: Any = None,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> list[DocumentOutcome]:
     """Run the compiled program over the whole corpus, checkpointing as it goes.
 
@@ -172,11 +202,21 @@ def produce(
     :param program: The compiled champion, loaded rather than recompiled
     :param texts: Document id to extracted text, for every document in the corpus
     :param project_dir: The project root
-    :param resume: Reuse checkpointed successes rather than re-running them
+    :param resume: Reuse checkpointed successes and submitted batches rather than re-running them
+    :param batch_client: An Anthropic client for the Batch API; created on demand if not given
+    :param sleep: How to wait between batch status checks; injected so tests do not wait
     :returns: One outcome per document, in corpus order regardless of completion order
     """
-    raw_dir = project_dir / "runs" / "production" / "raw"
+    import dspy
+
+    production_dir = project_dir / "runs" / "production"
+    raw_dir = production_dir / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
+    if not resume:
+        # a fresh run must not collect batches submitted for the previous one
+        batch_state = production_dir / STATE_FILE
+        if batch_state.exists():
+            batch_state.unlink()
     doc_ids = sorted(texts)
     by_doc: dict[str, DocumentOutcome] = {}
     pending: list[str] = []
@@ -187,6 +227,31 @@ def produce(
         else:
             pending.append(doc_id)
     reused = len(by_doc)
+
+    lm = dspy.settings.lm
+    if pending and lm is not None and _batch_applies(config, program):
+        client = batch_client if batch_client is not None else _anthropic_client()
+        predictions, raw_replies, refused = run_batches(
+            program,
+            {doc_id: texts[doc_id] for doc_id in pending},
+            lm,
+            production_dir,
+            client,
+            config.production.batch_poll_seconds,
+            sleep,
+        )
+        for doc_id, prediction in predictions.items():
+            outcome = DocumentOutcome(
+                doc_id=doc_id,
+                values={task.id: get_field(prediction, task.id) for task in registry},
+                via="batch",
+                raw=raw_replies[doc_id],
+            )
+            _write_checkpoint(raw_dir, outcome)
+            by_doc[doc_id] = outcome
+        for doc_id, reason in sorted(refused.items()):
+            logger.warning("%s not taken from the batch (%s); running it live", doc_id, reason)
+        pending = [doc_id for doc_id in pending if doc_id not in by_doc]
 
     if pending:
         with ThreadPoolExecutor(max_workers=config.production.num_threads) as pool:
@@ -448,7 +513,9 @@ def write_qa_report(
         "# Production QA",
         "",
         f"{len(result.succeeded)} of {expected_documents} documents produced output; "
-        f"{len(result.failures)} failed every retry and are recorded as failures.",
+        f"{len(result.failures)} failed every retry and are recorded as failures. "
+        f"{sum(1 for o in result.succeeded if o.via == 'batch')} came through the Batch API and "
+        f"{sum(1 for o in result.succeeded if o.via == 'live')} live.",
         "",
         "| check | result | detail |",
         "| --- | --- | --- |",

@@ -12,6 +12,8 @@ license = { text = "Proprietary" }
 authors = [{ name = "Aaron Anderson" }]
 dependencies = [
     "dspy[optuna]==3.3.1",
+    # production submits through the Message Batches API; the official SDK, not hand-rolled HTTP
+    "anthropic>=1.7,<2",
     "pydantic>=2.7",
     "pyyaml>=6.0",
     "click>=8.1",

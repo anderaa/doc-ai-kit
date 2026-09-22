@@ -25,6 +25,17 @@ the counts are reconciled at the end.
 doc-harness production
 ```
 
+With an Anthropic model this submits the corpus through the Message Batches API, at half the
+price, and waits for it -- usually within the hour, at most a day. The batch ids are saved
+before any waiting, so if the command is interrupted, run it again: it collects the batches
+it already submitted rather than paying for them twice. `--no-resume` discards them and
+starts over.
+
+Batching changes the price and nothing else: requests are the live path's own and replies
+are parsed by the live path's own code. A document the batch cannot deliver -- an errored or
+expired request, or a reply that cannot be read -- is run live instead, and `qa_report.md`
+says how many documents came each way.
+
 ## The gates
 
 All of these are in `qa_report.md`, and they run before anything is handed over:
