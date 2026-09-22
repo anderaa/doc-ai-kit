@@ -4,7 +4,7 @@ Projects pin one exact harness version. Read the entry for a version before movi
 project onto it: some releases change how answers are scored, and a number measured under
 one version is not comparable with a number measured under another.
 
-## Unreleased
+## 0.1.9
 
 **Changes scores on classification tasks whose classes are all below the support floor**, where
 macro-F1 counted classes that never appear, and **on `extract_numeric` tasks whose answers carry a unit other than a currency or
