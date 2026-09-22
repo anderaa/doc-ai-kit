@@ -108,6 +108,34 @@ def render_requests(program: Any, texts: Mapping[str, str], lm: Any) -> list[Bat
     return requests
 
 
+def predict_of(predictor: Any) -> Any:
+    """Return the ``dspy.Predict`` inside a predictor, which carries the signature it sends.
+
+    ``dspy.ChainOfThought`` is a module wrapping a Predict, so it has no ``signature`` of its
+    own. Reading it straight off the predictor worked for ``predict`` programs and failed for
+    every ``chain_of_thought`` one -- after the batch had been submitted and billed.
+    """
+    if getattr(predictor, "signature", None) is not None:
+        return predictor
+    inner = getattr(predictor, "predict", None)
+    if inner is not None and getattr(inner, "signature", None) is not None:
+        return inner
+    raise BatchError(
+        f"cannot read the signature of a {type(predictor).__name__} predictor, so its replies "
+        "could not be parsed back"
+    )
+
+
+def ensure_parsable(program: Any) -> None:
+    """Check every predictor can be read back, before anything is submitted and paid for.
+
+    :param program: The program about to be sent
+    :raises BatchError: If any group's replies could not be parsed once they arrive
+    """
+    for group in program.group_tasks:
+        predict_of(getattr(program, attribute_for(group)))
+
+
 def _state_path(production_dir: Path) -> Path:
     return production_dir / STATE_FILE
 
@@ -176,9 +204,11 @@ def collect(
     texts: Mapping[str, str],
     lm: Any,
     production_dir: Path,
+    usage_sink: dict[str, int] | None = None,
 ) -> tuple[dict[str, Any], dict[str, dict[str, str]], dict[str, str]]:
     """Turn every ended, uncollected batch's replies into predictions.
 
+    :param usage_sink: Filled with the tokens the batch billed, for the spend ledger
     :returns: Predictions for documents whose every request succeeded and parsed, the raw
         reply text behind them, and the reason each remaining document fell back to live
     """
@@ -193,6 +223,14 @@ def collect(
             continue
         for result in client.messages.batches.results(entry["batch_id"]):
             doc_id, group = entry["requests"][result.custom_id]
+            usage = getattr(getattr(result.result, "message", None), "usage", None)
+            if usage is not None and usage_sink is not None:
+                usage_sink["input_tokens"] = usage_sink.get("input_tokens", 0) + int(
+                    getattr(usage, "input_tokens", 0) or 0
+                )
+                usage_sink["output_tokens"] = usage_sink.get("output_tokens", 0) + int(
+                    getattr(usage, "output_tokens", 0) or 0
+                )
             text = _reply_text(result)
             if text is None:
                 refused[doc_id] = f"batch request {result.result.type}"
@@ -217,7 +255,7 @@ def collect(
 
 def _parse(program: Any, adapter: Any, lm: Any, group: str, document: str, text: str) -> dict[str, Any]:
     """Parse one reply through the adapter's own post-processing, as the live path does."""
-    predictor = getattr(program, attribute_for(group))
+    predictor = predict_of(getattr(program, attribute_for(group)))
     lm_kwargs = dict(getattr(predictor, "config", {}) or {})
     inputs = {INPUT_FIELD: document}
     processed = adapter._call_preprocess(lm, lm_kwargs, predictor.signature, inputs)
@@ -250,6 +288,7 @@ def run_batches(
     client: Any,
     poll_seconds: int,
     sleep: Callable[[float], None] = time.sleep,
+    usage_sink: dict[str, int] | None = None,
 ) -> tuple[dict[str, Any], dict[str, dict[str, str]], dict[str, str]]:
     """Submit what has not been submitted, wait for every open batch, and collect it.
 
@@ -262,6 +301,9 @@ def run_batches(
     :param sleep: Injected so tests do not wait
     :returns: Predictions, the raw replies behind them, and why any document fell back to live
     """
+    # checked before submitting: a program whose replies cannot be parsed would otherwise be
+    # paid for as a batch and then run again live, at full price
+    ensure_parsable(program)
     already = pending_in_batches(production_dir)
     to_submit = {doc_id: text for doc_id, text in texts.items() if doc_id not in already}
     if to_submit:
@@ -271,6 +313,6 @@ def run_batches(
     for entry in load_state(production_dir)["batches"]:
         if not entry["collected"]:
             wait_for(client, entry["batch_id"], poll_seconds, sleep)
-    predictions, raw, refused = collect(client, program, texts, lm, production_dir)
+    predictions, raw, refused = collect(client, program, texts, lm, production_dir, usage_sink)
     mark_collected(production_dir)
     return predictions, raw, refused

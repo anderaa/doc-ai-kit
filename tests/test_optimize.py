@@ -11,7 +11,7 @@ from conftest import document_for, scripted_lm
 
 from doc_harness.config import Config
 from doc_harness.dataset import LabelRecord, build_examples
-from doc_harness.guards import GuardError
+from doc_harness.guards import GuardError, RolloutBudgetExceeded
 from doc_harness.metric import build_metric
 from doc_harness.optimize import (
     MINIBATCH_FLOOR,
@@ -120,7 +120,7 @@ def test_counting_metric_enforces_the_rollout_budget(toy_registry: Registry, exa
     counting = CountingMetric(metric=build_metric(toy_registry), max_rollouts=2)
     counting(examples[0], examples[0])
     counting(examples[0], examples[0])
-    with pytest.raises(GuardError, match="rollout budget of 2 is spent"):
+    with pytest.raises(RolloutBudgetExceeded, match="rollout budget of 2 is spent"):
         counting(examples[0], examples[0])
     assert counting.calls == 3
 
@@ -392,3 +392,43 @@ def test_compile_passes_only_what_each_optimizer_takes() -> None:
     gepa = Recording()
     _compile(gepa, "GEPA", student="p", trainset=["t"], valset=["v"])
     assert set(gepa.kwargs) == {"trainset", "valset"}
+
+
+def test_a_spent_rollout_budget_stops_the_run_cleanly(
+    project: Path, toy_registry: Registry, examples: list[Any], answers: Any
+) -> None:
+    """Reported from a real run: the guard raised inside DSPy, which logged it and carried on."""
+    config = _config(optimization={"max_rollouts": 1})
+    with scripted_lm(answers), pytest.raises(GuardError, match="rollout budget of 1 is spent"):
+        run_experiment(
+            toy_registry,
+            config,
+            build_metric(toy_registry),
+            trainset=examples[:8],
+            valset=examples[8:],
+            project_dir=project,
+            variable="a budget too small to finish",
+        )
+    assert not (project / "runs" / "champion.json").exists(), "a run that was stopped must record nothing"
+
+
+def test_a_champion_of_another_module_type_is_not_branched_from(
+    project: Path, toy_registry: Registry, examples: list[Any], answers: Any
+) -> None:
+    """Reported from a real run: compile crashed loading a predict champion as chain_of_thought."""
+    # a chain-of-thought program asks for its reasoning field too
+    reasoned = {doc_id: {"reasoning": "the document says so", **values} for doc_id, values in answers.items()}
+    with scripted_lm(reasoned):
+        first, _program, _result = run_experiment(
+            toy_registry, _config(), build_metric(toy_registry), trainset=examples[:8], valset=examples[8:],
+            project_dir=project, variable="predict champion",
+        )  # fmt: skip
+        champion = json.loads((project / "runs" / "champion.json").read_text(encoding="utf-8"))
+        assert champion["module"] == "predict"
+
+        second, _program, _result = run_experiment(
+            toy_registry, _config(optimization={"module": "chain_of_thought"}), build_metric(toy_registry),
+            trainset=examples[:8], valset=examples[8:], project_dir=project, variable="chain of thought",
+        )  # fmt: skip
+    assert second.parent is None, f"{second.exp_id} branched from a {champion['module']} champion"
+    assert first.exp_id != second.exp_id

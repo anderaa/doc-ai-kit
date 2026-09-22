@@ -12,7 +12,8 @@ from __future__ import annotations
 
 import logging
 import sys
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -62,6 +63,7 @@ from doc_harness.program import build_program, load_program, task_lm
 from doc_harness.registry import Registry
 from doc_harness.report import append_ledger, run_holdout, write_report
 from doc_harness.scaffold_writer import HARNESS_REPO, PIN_MODES, ScaffoldOptions, create_project
+from doc_harness.spend import check_budget, record_spend, totals
 from doc_harness.splits import (
     SUPPORT_OPTIONS,
     below_floor,
@@ -150,6 +152,27 @@ class Project:
         texts = load_texts(self.data / "text", doc_ids)
         return build_examples(records, texts, registry=self.registry)
 
+    @contextmanager
+    def paying(self, label: str, models: Sequence[str] | None = None) -> Iterator[None]:
+        """Refuse a paid step the budget cannot cover, and record what it spent.
+
+        The ceiling is checked before the step, because a run under way cannot be unspent.
+
+        :param label: What is running, recorded in runs/spend.json
+        :param models: The models it will call; the task model unless given
+        """
+        from dspy.utils.usage_tracker import track_usage
+
+        called = list(models or [self.config.models.task or ""])
+        check_budget(self.runs, self.config.budget, called, label)
+        with track_usage() as tracker:
+            try:
+                yield
+            finally:
+                spent = record_spend(self.runs, self.config.budget, label, tracker.get_total_tokens())
+                if spent and self.config.budget.max_usd is not None:
+                    click.echo(f"{label} spent ${spent:.2f}; ${totals(self.runs)['usd']:.2f} of the budget so far.")
+
     def record_decision(self, heading: str, body: str) -> None:
         """Append a decision to decisions.md, where human choices are kept."""
         path = self.directory / "decisions.md"
@@ -187,6 +210,9 @@ def status(project: Project) -> None:
 def extract(project: Project, force: bool) -> None:
     """Extract text from data/pdfs into the cache, and write the manifest."""
     project.load_customizations()
+    settings = project.config.extraction.transcription
+    if settings.mode != "off" and settings.model:
+        check_budget(project.runs, project.config.budget, [settings.model], "transcribing scanned pages")
     documents = extract_corpus(
         project.data / "pdfs",
         project.data / "text",
@@ -199,6 +225,12 @@ def extract(project: Project, force: bool) -> None:
     if transcribed:
         spent_in = sum(document.transcription_tokens[0] for document in documents)
         spent_out = sum(document.transcription_tokens[1] for document in documents)
+        record_spend(
+            project.runs,
+            project.config.budget,
+            "transcription",
+            {settings.model or "": {"input_tokens": spent_in, "output_tokens": spent_out}},
+        )
         click.echo(
             f"{transcribed} page(s) with no usable text layer were transcribed by "
             f"{project.config.extraction.transcription.model}; this run spent {spent_in:,} input and "
@@ -354,14 +386,15 @@ def _prefill(project: Project, holdout: Sequence[str], doc_ids: Sequence[str], l
     instructions = module.starting_instructions() if module and hasattr(module, "starting_instructions") else None
     program = build_program(project.registry, config.optimization.module, instructions=instructions or None)
     click.echo(f"Prefilling {len(doc_ids)} document(s) with {config.models.task}; the holdout is not sent.")
-    outcomes = run_program_over(
-        project.registry,
-        config,
-        program,
-        load_texts(project.data / "text", doc_ids),
-        project.directory,
-        run_dir=project.runs / "prelabel",
-    )
+    with project.paying(f"label-sheet prefill ({len(doc_ids)} documents)"):
+        outcomes = run_program_over(
+            project.registry,
+            config,
+            program,
+            load_texts(project.data / "text", doc_ids),
+            project.directory,
+            run_dir=project.runs / "prelabel",
+        )
     failed = [outcome.doc_id for outcome in outcomes if not outcome.ok]
     if failed:
         click.echo(f"{len(failed)} document(s) got no usable answer and are left empty: {', '.join(failed)}")
@@ -575,16 +608,17 @@ def run_baseline_command(project: Project) -> None:
     valset = project.examples_for(splits.val)
 
     demos, instructions = _project_baseline_inputs(project, trainset)
-    report = run_baselines(
-        project.registry,
-        project.config,
-        project.metric(),
-        trainset=trainset,
-        valset=valset,
-        runs_dir=project.runs,
-        demos=demos,
-        instructions=instructions,
-    )
+    with project.paying("run-baseline"):
+        report = run_baselines(
+            project.registry,
+            project.config,
+            project.metric(),
+            trainset=trainset,
+            valset=valset,
+            runs_dir=project.runs,
+            demos=demos,
+            instructions=instructions,
+        )
     project.runs.mkdir(parents=True, exist_ok=True)
     (project.runs / BASELINE_SECTION).write_text(report.to_markdown(), encoding="utf-8")
     click.echo(report.to_markdown())
@@ -635,16 +669,18 @@ def compile(project: Project, variable: str, no_branch: bool) -> None:
     )
     project.configure_lm()
     splits = load_splits(project.data / "splits.json")
-    record, _program, result = run_experiment(
-        project.registry,
-        project.config,
-        project.metric(),
-        trainset=project.examples_for(splits.train),
-        valset=project.examples_for(splits.val),
-        project_dir=project.directory,
-        variable=variable,
-        branch_from_champion=not no_branch,
-    )
+    models = [project.config.models.task or "", project.config.models.reflection or ""]
+    with project.paying(f"compile ({project.config.optimization.optimizer})", models=models):
+        record, _program, result = run_experiment(
+            project.registry,
+            project.config,
+            project.metric(),
+            trainset=project.examples_for(splits.train),
+            valset=project.examples_for(splits.val),
+            project_dir=project.directory,
+            variable=variable,
+            branch_from_champion=not no_branch,
+        )
     click.echo(f"{record.exp_id}: aggregate {result.aggregate:.3f} on validation ({record.rollouts} rollouts)")
     click.echo("Per task:")
     for task_id, value in result.per_task_primary.items():
@@ -676,19 +712,20 @@ def holdout(project: Project, override: bool, reason: str) -> None:
     program = load_program(project.registry, Path(champion["program"]), module_type=project.config.optimization.module)
     metric = project.metric()
     recorded = load_metrics(project.runs / str(champion["exp_id"]) / "metrics.json")
-    report = run_holdout(
-        project.registry,
-        project.config,
-        metric,
-        program,
-        project.examples_for(splits.holdout),
-        project.directory,
-        validation_aggregate=float(recorded["aggregate"]["score"]),
-        validation_per_task=per_task_from_metrics(recorded),
-        opened_by=f"holdout command ({champion['exp_id']})",
-        override=override,
-        reason=reason,
-    )
+    with project.paying("holdout"):
+        report = run_holdout(
+            project.registry,
+            project.config,
+            metric,
+            program,
+            project.examples_for(splits.holdout),
+            project.directory,
+            validation_aggregate=float(recorded["aggregate"]["score"]),
+            validation_per_task=per_task_from_metrics(recorded),
+            opened_by=f"holdout command ({champion['exp_id']})",
+            override=override,
+            reason=reason,
+        )
     (project.runs / "holdout" / HOLDOUT_SECTION).write_text(report.to_markdown(), encoding="utf-8")
     project.record_decision(
         "holdout reading",
@@ -721,7 +758,8 @@ def production(project: Project, no_resume: bool) -> None:
         raise click.ClickException(f"no cached text in {text_dir}; run `doc-harness extract` first")
     texts = load_texts(text_dir, doc_ids)
 
-    outcomes = produce(project.registry, project.config, program, texts, project.directory, resume=not no_resume)
+    with project.paying("production"):
+        outcomes = produce(project.registry, project.config, program, texts, project.directory, resume=not no_resume)
 
     records = load_labels(project.data / "labels.jsonl")
     recorded = load_metrics(project.runs / str(champion["exp_id"]) / "metrics.json")
@@ -816,7 +854,7 @@ def adjudicate(project: Project, run_id: str) -> None:
 
 @cli.command()
 @click.option("--labeling-hours", type=float, default=None, help="Hours spent labeling, for the ledger.")
-@click.option("--cost-usd", type=float, default=None, help="Total spend, for the ledger.")
+@click.option("--cost-usd", type=float, default=None, help="Total spend; taken from runs/spend.json if omitted.")
 @click.option("--ledger", type=click.Path(path_type=Path), default=None, help="Path to the shared ledger.csv.")
 @pass_project
 def close(project: Project, labeling_hours: float | None, cost_usd: float | None, ledger: Path | None) -> None:
@@ -849,7 +887,8 @@ def close(project: Project, labeling_hours: float | None, cost_usd: float | None
                 "n_documents": len(list((project.data / "text").glob("*.md"))),
                 "k_labeled": len(records),
                 "labeling_hours": labeling_hours if labeling_hours is not None else "",
-                "cost_usd": cost_usd if cost_usd is not None else "",
+                # from the spend ledger unless given: measured beats remembered
+                "cost_usd": cost_usd if cost_usd is not None else (totals(project.runs)["usd"] or ""),
             },
         )
         click.echo(f"Appended to {ledger}.")

@@ -100,5 +100,16 @@ production:
   max_schema_failure_rate: 0.005
 
 budget:
-  # the cost ceiling for this engagement; there is no default that spends money
+  # the cost ceiling for this engagement; there is no default that spends money. Checked
+  # before each paid step and recorded in runs/spend.json as it goes. A step that would start
+  # over the ceiling is refused; one already running is never killed halfway, since what it
+  # has paid for cannot be unspent
   max_usd: null
+  # what each model costs on your account, per million tokens. No defaults: prices change and
+  # differ by account, and a guessed price is a budget that means nothing. Setting max_usd
+  # without a price for a model in use is refused rather than quietly ignored
+  prices: {}
+  #  anthropic/claude-sonnet-5:
+  #    input_per_mtok: 3.00
+  #    output_per_mtok: 15.00
+  #    batch_multiplier: 0.5   # the Batch API's share of the live price

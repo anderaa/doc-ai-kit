@@ -74,6 +74,14 @@ in place.
 - A decision recorded in `decisions.md` if you are accepting the compiled program over the
   baseline.
 
+## Cost
+
+Every paid step records what it spent in `runs/spend.json`, priced from `budget.prices` in
+`config.yaml`. If `budget.max_usd` is set, a step that would start over the ceiling is
+refused; a step already running is never killed halfway, because what it has paid for cannot
+be unspent. A ceiling set without a price for a model in use is refused rather than ignored,
+since a budget that cannot be applied is not a budget.
+
 ## Next
 
 `holdout` -- once, when you have decided which program you are shipping.

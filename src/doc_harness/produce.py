@@ -30,7 +30,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from doc_harness.batch import STATE_FILE, run_batches
+from doc_harness import spend
+from doc_harness.batch import STATE_FILE, BatchError, ensure_parsable, run_batches
 from doc_harness.config import Config
 from doc_harness.evaluate import is_abstention, to_json_value
 from doc_harness.metric import get_field
@@ -182,7 +183,15 @@ def _batch_applies(config: Config, program: Any) -> bool:
         logger.info("the Batch API is Anthropic's; %s runs live", config.models.task)
         return False
     # the batch path drives the program's own predictors and merge
-    return hasattr(program, "group_tasks") and hasattr(program, "assemble")
+    if not (hasattr(program, "group_tasks") and hasattr(program, "assemble")):
+        return False
+    try:
+        ensure_parsable(program)
+    except BatchError as exc:
+        # found before submitting, so the batch is never paid for twice
+        logger.warning("the Batch API path cannot read this program (%s); running live instead", exc)
+        return False
+    return True
 
 
 def produce(
@@ -234,6 +243,7 @@ def produce(
     lm = dspy.settings.lm
     if pending and lm is not None and _batch_applies(config, program):
         client = batch_client if batch_client is not None else _anthropic_client()
+        batch_usage: dict[str, int] = {}
         predictions, raw_replies, refused = run_batches(
             program,
             {doc_id: texts[doc_id] for doc_id in pending},
@@ -242,7 +252,17 @@ def produce(
             client,
             config.production.batch_poll_seconds,
             sleep,
+            usage_sink=batch_usage,
         )
+        if batch_usage:
+            # the batch is billed by Anthropic directly, so DSPy's usage tracker never sees it
+            spend.record_spend(
+                project_dir / "runs",
+                config.budget,
+                "production (batch)",
+                {config.models.task or "": batch_usage},
+                route="batch",
+            )
         for doc_id, prediction in predictions.items():
             outcome = DocumentOutcome(
                 doc_id=doc_id,

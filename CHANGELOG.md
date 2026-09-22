@@ -6,7 +6,8 @@ one version is not comparable with a number measured under another.
 
 ## Unreleased
 
-**Changes scores on `extract_numeric` tasks whose answers carry a unit other than a currency or
+**Changes scores on classification tasks whose classes are all below the support floor**, where
+macro-F1 counted classes that never appear, and **on `extract_numeric` tasks whose answers carry a unit other than a currency or
 percent**, such as a notice period in days. Money amounts score as before. A finished run can
 be re-scored without inference: `doc-harness rescore <run_id>`.
 
@@ -22,6 +23,30 @@ be re-scored without inference: `doc-harness rescore <run_id>`.
 - **`unit_aliases` is accepted in a numeric task's `match` block**, e.g.
   `unit_aliases: {"sq ft": "square feet"}`. The normalizer already read it, but `tasks.yaml`
   refused the key, so a project needing a unit of its own had to write a custom normalizer.
+- **The Batch API reads `chain_of_thought` programs.** `ChainOfThought` wraps a `Predict` and
+  has no signature of its own, so every reply failed to parse -- after the batch had been
+  submitted and billed, and the whole corpus was then re-run live at full price. The batch path
+  also checks it can read a program **before** submitting anything, and runs live from the start
+  when it cannot, so a batch is never paid for twice.
+- **`budget.max_usd` is enforced.** It was recorded with every run and checked nowhere. Spend is
+  now recorded in `runs/spend.json` as each paid step finishes -- tokens always, dollars where
+  priced -- and a step that would start over the ceiling is refused. Prices are declared per
+  project under `budget.prices`, because they change and differ by account; a ceiling set
+  without a price for a model in use is refused rather than ignored. A step already running is
+  never killed halfway, since what it has paid for cannot be unspent.
+- **A spent rollout budget stops the run.** The guard raised an ordinary exception inside the
+  metric, and DSPy's workers catch those, log them and carry on: one run went 11 rollouts past
+  its cap. It now raises past that handling and `compile` reports it as a refusal. Workers
+  already in flight can still overshoot by up to `optimization.num_threads`.
+- **`compile` no longer crashes when the module type changes.** A champion records the module it
+  was built with; an experiment that changes it starts fresh instead of loading a `predict`
+  program as `chain_of_thought`. A champion that cannot be loaded for any other reason is noted
+  in the experiment record and the run continues from scratch rather than dying.
+- **Macro-F1 ignores classes that appear nowhere.** With no class above the support floor, the
+  average ran over every declared class, including those in neither the gold labels nor the
+  predictions: a governing-law task with 51 declared states, answering all 29 holdout documents
+  correctly, scored 0.173. The average now covers the classes that appear, and the note beside
+  it says how many of how many.
 - **`status` counts PDFs whatever the case of their extension.** 0.1.8 fixed extraction but
   not the count in `status`, which still matched `*.pdf` only: on CUAD it reported 199 PDFs
   where extraction reads 510. Both now use one definition of a PDF. Reported from the first

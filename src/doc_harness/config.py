@@ -268,10 +268,25 @@ class ProductionConfig(_Strict):
     max_schema_failure_rate: float = Field(default=0.005, ge=0.0, le=1.0)
 
 
+class ModelPrice(_Strict):
+    """What one model costs, per million tokens, on this account."""
+
+    input_per_mtok: float = Field(gt=0.0)
+    output_per_mtok: float = Field(gt=0.0)
+    # the Batch API's share of the live price
+    batch_multiplier: float = Field(default=0.5, gt=0.0, le=1.0)
+
+
 class BudgetConfig(_Strict):
-    """The cost ceiling for the engagement; there is no default that spends money."""
+    """The cost ceiling for the engagement; there is no default that spends money.
+
+    Prices are declared per project rather than shipped: they change, and they differ by
+    account. A ceiling without a price for a model in use is refused rather than ignored,
+    because a budget that cannot be applied is not a budget.
+    """
 
     max_usd: float | None = Field(default=None, gt=0.0)
+    prices: dict[str, ModelPrice] = Field(default_factory=dict)
 
 
 class Config(_Strict):

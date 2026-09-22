@@ -195,8 +195,9 @@ yourself -- they are the same commands either way.
   if documents are long. There is no default model, so nothing spends money before this.
 - Commit.
 
-`budget.max_usd` is recorded with each run but not enforced. Watch spending in the
-Anthropic console.
+Set `budget.max_usd` and the matching `budget.prices` if you want a ceiling: spend is then
+recorded per step in `runs/spend.json`, and a step that would start over the ceiling is
+refused. Without prices declared, spend is still recorded in tokens.
 
 ### 5. Extract the text
 
@@ -363,6 +364,9 @@ failure is silent -- the numbers keep going up while the measurement stops meani
   an image and transcribed into the text cache in place; a page still unread is counted and
   routed to review. Judged on a whole-document average instead, a report with a few scanned
   pages of accounts passes with those pages blank.
+- **The budget is enforced, from measured spend.** Each paid step records its tokens and cost
+  in `runs/spend.json`, and a step that would start over `budget.max_usd` is refused. Prices
+  are declared per project, because a guessed price is a ceiling that means nothing.
 - **Every run saves its predictions.** Fixing a matcher and re-measuring costs nothing
   (`doc-harness rescore`), so nobody is tempted to leave the bug in to avoid paying again.
 - **The holdout is drawn before any model runs, and labeled blind.** Labeling happens in a

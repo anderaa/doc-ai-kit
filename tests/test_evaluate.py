@@ -374,3 +374,39 @@ def test_typed_predictions_round_trip_through_json(fixtures_dir: Path, tmp_path:
     rescored = score_split(registry, metric, [gold], [saved], support_floor=1, measurable_floor=1)
     assert rescored.aggregate == pytest.approx(original.aggregate)
     assert rescored.per_task_primary == pytest.approx(original.per_task_primary)
+
+
+def test_unseen_classes_do_not_dilute_macro_f1() -> None:
+    """Reported from a real run: 29 of 29 governing-law answers correct scored 0.173.
+
+    The task declared 51 states, a 29-document holdout cannot reach the support floor for any
+    of them, and the fallback averaged over every declared class -- including 45 that appear
+    in neither the gold labels nor the predictions.
+    """
+    from doc_harness.metric import build_metric
+    from doc_harness.registry import Registry
+
+    states = ["NY", "CA", "DE", "TX", "FL", "IL", "MA", "WA", "OH", "GA"]
+    registry = Registry.from_mapping(
+        {
+            "tasks": [
+                {
+                    "id": "governing_law",
+                    "type": "multiclass",
+                    "question": "Which state governs.",
+                    "output": {"enum": states, "nullable": True},
+                }
+            ]
+        }
+    )
+    golds = [{"doc_id": f"d{i}", "governing_law": ("NY", "CA")[i % 2]} for i in range(10)]
+    result = score_split(registry, build_metric(registry), golds, [dict(gold) for gold in golds], support_floor=30)
+    task = result.tasks["governing_law"]
+    assert task.primary_value == pytest.approx(1.0), "every answer was right"
+    assert "macro-F1 over the 2 class(es) that appear, of 10 declared" in " ".join(task.notes)
+
+    # a declared class that is missed, rather than absent, still counts against the task
+    missed = [dict(gold) for gold in golds]
+    missed[0]["governing_law"] = "DE"
+    result = score_split(registry, build_metric(registry), golds, missed, support_floor=30)
+    assert result.tasks["governing_law"].primary_value < 1.0

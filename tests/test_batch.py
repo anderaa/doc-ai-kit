@@ -299,3 +299,42 @@ def test_runs_live_when_the_batch_does_not_apply(
                        batch_client=client, sleep=_no_wait)  # fmt: skip
     assert client.messages.batches.created == {}
     assert all(outcome.via == "live" for outcome in outcomes)
+
+
+# --- program shapes -------------------------------------------------------------------------
+
+
+def _reasoned(doc_id: str) -> tuple[str, str | None]:
+    """A chain-of-thought reply: the reasoning field comes first, then the answers."""
+    return "succeeded", "[[ ## reasoning ## ]]\nThe document says so.\n\n" + reply_for(doc_id)
+
+
+def test_a_chain_of_thought_program_goes_through_the_batch(
+    tmp_path: Path, toy_registry: Registry, lm: Any, live_http: list[str]
+) -> None:
+    """Reported from a real run: every reply failed to parse after the batch was billed.
+
+    ChainOfThought wraps a Predict and has no signature of its own, so reading it off the
+    predictor worked for predict programs and broke for these -- at full price, twice.
+    """
+    program = build_program(toy_registry, module_type="chain_of_thought")
+    outcomes = produce(
+        toy_registry, _config(), program, _texts(3), tmp_path,
+        batch_client=fake_client(_reasoned), sleep=_no_wait,
+    )  # fmt: skip
+    assert [outcome.via for outcome in outcomes] == ["batch"] * 3
+    assert not live_http, "a batch reply that parses must never be re-run live"
+    assert outcomes[1].values == {"flag": True, "state": "CA", "number": "A-1"}
+
+
+def test_a_program_the_batch_cannot_read_runs_live_without_being_submitted(
+    tmp_path: Path, toy_registry: Registry, lm: Any, live_http: list[str]
+) -> None:
+    """The check happens before submitting: an unreadable program is never paid for as a batch."""
+    program = build_program(toy_registry)
+    # a predictor with no signature anywhere, as ChainOfThought looked to the old code
+    program.predict_all = SimpleNamespace(__call__=lambda **_: None)
+    client = fake_client(always_right)
+    outcomes = produce(toy_registry, _config(), program, _texts(2), tmp_path, batch_client=client, sleep=_no_wait)
+    assert not client.messages.batches.created, "an unreadable program was submitted anyway"
+    assert [outcome.via for outcome in outcomes] == ["live"] * 2

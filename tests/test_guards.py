@@ -101,9 +101,31 @@ def test_experiment_budget_on_a_fresh_project(tmp_path: Path) -> None:
 
 
 def test_rollout_budget() -> None:
+    from doc_harness.guards import RolloutBudgetExceeded
+
     check_rollout_budget(9, 10)
-    with pytest.raises(GuardError, match="rollout budget of 10 is spent"):
+    with pytest.raises(RolloutBudgetExceeded, match="rollout budget of 10 is spent"):
         check_rollout_budget(10, 10)
+
+
+def test_a_spent_rollout_budget_is_not_an_ordinary_exception() -> None:
+    """Reported from a real run: a run carried on 11 rollouts past its cap.
+
+    The metric runs inside DSPy's workers, which catch Exception, log it and continue. Only
+    a BaseException escapes them and stops the run.
+    """
+    from doc_harness.guards import RolloutBudgetExceeded
+
+    assert not issubclass(RolloutBudgetExceeded, Exception)
+    caught = None
+    try:
+        try:
+            check_rollout_budget(10, 10)
+        except Exception as exc:  # noqa: BLE001 - exactly what DSPy's worker does
+            caught = exc
+    except RolloutBudgetExceeded as exceeded:
+        assert exceeded.spent == 10 and exceeded.max_rollouts == 10
+    assert caught is None, "DSPy's own error handling would have swallowed this"
 
 
 def test_readonly_does_not_mask_the_original_error(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:

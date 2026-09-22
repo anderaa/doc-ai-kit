@@ -26,7 +26,13 @@ from typing import Any
 
 from doc_harness.config import Config
 from doc_harness.evaluate import EvaluationResult, run_program, score_split, write_run
-from doc_harness.guards import GuardError, check_experiment_budget, check_rollout_budget, readonly
+from doc_harness.guards import (
+    GuardError,
+    RolloutBudgetExceeded,
+    check_experiment_budget,
+    check_rollout_budget,
+    readonly,
+)
 from doc_harness.metric import Metric, get_field
 from doc_harness.program import build_program, instructions_of, load_program, save_program, task_lm
 from doc_harness.registry import Registry, TaskType
@@ -310,6 +316,8 @@ def pin_champion(runs_dir: Path, record: ExperimentRecord, program_path: Path) -
         "aggregate": record.aggregate,
         "per_task": record.per_task,
         "program": str(program_path),
+        # recorded so a later experiment knows whether it can branch from this program at all
+        "module": record.config.get("module", ""),
         "pinned_at": datetime.now(UTC).isoformat(timespec="seconds"),
     }
     (runs_dir / CHAMPION_FILE).write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
@@ -372,11 +380,32 @@ def run_experiment(
     champion = read_champion(runs_dir) if branch_from_champion else None
     parent = champion["exp_id"] if champion else None
 
+    module = config.optimization.module
+    # a champion built as predict cannot be loaded as chain_of_thought, or the other way round:
+    # its saved state has different predictors. Changing module is a fresh start, not a branch
+    champion_module = str(champion.get("module") or "") if champion else ""
+    if champion and champion_module and champion_module != module:
+        logger.info(
+            "%s starts fresh: champion %s is a %s program and this experiment is %s",
+            exp_id,
+            parent,
+            champion_module,
+            module,
+        )
+        champion, parent = None, None
+    branch_notes: list[str] = []
     if champion and Path(champion["program"]).exists():
-        student = load_program(registry, Path(champion["program"]), module_type=config.optimization.module)
-        logger.info("%s branches from champion %s", exp_id, parent)
+        try:
+            student = load_program(registry, Path(champion["program"]), module_type=module)
+            logger.info("%s branches from champion %s", exp_id, parent)
+        except Exception as exc:  # noqa: BLE001 - recorded, and the experiment still runs
+            # an unreadable champion is a reason to start from scratch, not to lose the run
+            branch_notes.append(f"could not branch from champion {parent} ({type(exc).__name__}); started fresh")
+            logger.warning("%s could not load champion %s: %s; starting fresh", exp_id, parent, exc)
+            student = build_program(registry, module_type=module, instructions=instructions)
+            parent = None
     else:
-        student = build_program(registry, module_type=config.optimization.module, instructions=instructions)
+        student = build_program(registry, module_type=module, instructions=instructions)
 
     ordered_train = class_coverage_order(registry, trainset, seed=config.splits.seed)
     counting = CountingMetric(metric=metric, max_rollouts=config.optimization.max_rollouts)
@@ -385,22 +414,31 @@ def run_experiment(
     protected = [data_dir / "labels.jsonl", data_dir / "splits.json"]
     started = time.monotonic()
     with readonly(protected, reason="labels.jsonl and splits.json are read-only to every optimization path"):
-        compiled = _compile(
-            optimizer,
-            config.optimization.optimizer,
-            student,
-            ordered_train,
-            valset,
-            num_trials=config.optimization.num_trials,
-        )
-        predictions = run_program(
-            compiled,
-            valset,
-            metric,
-            num_threads=config.optimization.num_threads,
-            max_retries=config.evaluation.max_retries,
-            max_failure_rate=config.evaluation.max_failure_rate,
-        )
+        try:
+            compiled = _compile(
+                optimizer,
+                config.optimization.optimizer,
+                student,
+                ordered_train,
+                valset,
+                num_trials=config.optimization.num_trials,
+            )
+            predictions = run_program(
+                compiled,
+                valset,
+                metric,
+                num_threads=config.optimization.num_threads,
+                max_retries=config.evaluation.max_retries,
+                max_failure_rate=config.evaluation.max_failure_rate,
+            )
+        except RolloutBudgetExceeded as exceeded:
+            # the optimizer is stopped where it stands: nothing is recorded, because a run cut
+            # short mid-search has not produced a program worth comparing with the others
+            raise GuardError(
+                f"{exceeded} {exp_id} spent {counting.calls} rollout(s) and was stopped; nothing was "
+                "recorded. Workers already in flight can overshoot the cap by up to "
+                f"optimization.num_threads ({config.optimization.num_threads})."
+            ) from exceeded
     wall_seconds = time.monotonic() - started
 
     result = score_split(
@@ -448,7 +486,7 @@ def run_experiment(
         rollouts=counting.calls,
         wall_seconds=wall_seconds,
         parent=parent,
-        notes=notes,
+        notes=branch_notes + notes,
     )
 
     run_dir = runs_dir / exp_id

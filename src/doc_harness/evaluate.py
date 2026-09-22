@@ -342,12 +342,20 @@ def _primary_value(
         above = [metrics for metrics in classes.values() if metrics.above_floor]
         if above:
             return sum(metrics.f1 for metrics in above) / len(above), notes
+        # a class that is in neither the gold labels nor the predictions was not measured at
+        # all, and averaging its F1 of zero reports a failure that never happened: a task
+        # declaring 51 states and answering all 29 documents correctly scored 0.173
+        seen = [metrics for metrics in classes.values() if metrics.tp + metrics.fp + metrics.fn > 0]
         # macro-F1 weights every class equally, so a four-example class otherwise swings the
         # headline number as hard as a four-hundred-example one
-        notes.append("no class reaches the support floor; macro-F1 computed over all classes")
-        if not classes:
+        if not seen:
+            notes.append("no class appears in the gold labels or the predictions")
             return 0.0, notes
-        return sum(metrics.f1 for metrics in classes.values()) / len(classes), notes
+        notes.append(
+            f"no class reaches the support floor; macro-F1 over the {len(seen)} class(es) that appear"
+            + (f", of {len(classes)} declared" if len(classes) > len(seen) else "")
+        )
+        return sum(metrics.f1 for metrics in seen) / len(seen), notes
     return f1, notes
 
 

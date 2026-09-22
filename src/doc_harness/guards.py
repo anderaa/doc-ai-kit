@@ -177,11 +177,22 @@ def check_experiment_budget(runs_dir: Path, max_experiments: int) -> int:
     return len(existing)
 
 
-def check_rollout_budget(spent: int, max_rollouts: int) -> None:
-    """Refuse to continue once the rollout budget is spent."""
-    if spent >= max_rollouts:
-        raise GuardError(
+# BaseException, not Exception: the metric runs inside DSPy's own workers, which catch
+# Exception, log it and carry on. A budget that only logged let a run continue past its cap
+class RolloutBudgetExceeded(BaseException):
+    """Raised inside the metric to stop an optimizer run that has spent its rollout budget."""
+
+    def __init__(self, spent: int, max_rollouts: int) -> None:
+        self.spent = spent
+        self.max_rollouts = max_rollouts
+        super().__init__(
             f"the rollout budget of {max_rollouts} is spent ({spent} used). "
             "Heavy optimizer settings have consumed thousands of rollouts in published runs; "
             "raise optimization.max_rollouts deliberately, not reflexively."
         )
+
+
+def check_rollout_budget(spent: int, max_rollouts: int) -> None:
+    """Refuse to continue once the rollout budget is spent."""
+    if spent >= max_rollouts:
+        raise RolloutBudgetExceeded(spent, max_rollouts)
