@@ -15,6 +15,9 @@ one version is not comparable with a number measured under another.
   already paid for. `production.use_batch_api` (default true) and `batch_poll_seconds`
   control it; other providers run live. Each checkpoint records which way its answer came
   and keeps the model's raw reply, and `qa_report.md` counts both routes.
+  Measured on the adversarial corpus through the real API: all 48 requests succeeded, input
+  tokens matched the live run exactly (75,394 each, the same prompts), accuracy matched
+  (0.996), and cost halved ($0.238 to $0.119). The batch took 42 minutes to process.
 - Adds the `anthropic` SDK as a dependency.
 
 ## 0.1.4
