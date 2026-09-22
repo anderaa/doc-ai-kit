@@ -4,7 +4,7 @@ Projects pin one exact harness version. Read the entry for a version before movi
 project onto it: some releases change how answers are scored, and a number measured under
 one version is not comparable with a number measured under another.
 
-## Unreleased
+## 0.1.8
 
 **Changes which documents are extracted, and which pages are sent for transcription.** Found
 by a dry run on CUAD's 510 contracts.
