@@ -4,6 +4,15 @@ Projects pin one exact harness version. Read the entry for a version before movi
 project onto it: some releases change how answers are scored, and a number measured under
 one version is not comparable with a number measured under another.
 
+## Unreleased
+
+**Does not change scores or prompts.**
+
+- **`status` counts PDFs whatever the case of their extension.** 0.1.8 fixed extraction but
+  not the count in `status`, which still matched `*.pdf` only: on CUAD it reported 199 PDFs
+  where extraction reads 510. Both now use one definition of a PDF. Reported from the first
+  real-user run.
+
 ## 0.1.8
 
 **Changes which documents are extracted, and which pages are sent for transcription.** Found

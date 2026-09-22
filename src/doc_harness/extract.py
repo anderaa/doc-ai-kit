@@ -125,6 +125,15 @@ def doc_id_from_name(file_name: str) -> str:
     return name.strip()
 
 
+def is_pdf(path: Path) -> bool:
+    """Return whether a file is a PDF the corpus includes: any case of extension, not hidden.
+
+    The one definition, shared by extraction and ``status``, so the two cannot disagree about
+    how many documents there are.
+    """
+    return path.is_file() and not path.name.startswith(".") and path.suffix.lower() == ".pdf"
+
+
 def list_pdfs(pdf_dir: Path) -> list[Path]:
     """Return every PDF in a directory, whatever the case of its extension.
 
@@ -132,8 +141,8 @@ def list_pdfs(pdf_dir: Path) -> list[Path]:
     so that nothing leaves the corpus without a word.
     """
     files = sorted(path for path in pdf_dir.iterdir() if path.is_file() and not path.name.startswith("."))
-    pdfs = [path for path in files if path.suffix.lower() == ".pdf"]
-    skipped = [path.name for path in files if path.suffix.lower() != ".pdf"]
+    pdfs = [path for path in files if is_pdf(path)]
+    skipped = [path.name for path in files if not is_pdf(path)]
     if skipped:
         logger.warning("%d file(s) in %s are not PDFs and are skipped: %s", len(skipped), pdf_dir, ", ".join(skipped))
     owners: dict[str, str] = {}

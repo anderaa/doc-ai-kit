@@ -354,3 +354,13 @@ def test_ground_truth_is_committed_and_documents_are_not(project: Path, tmp_path
     )
     ignored = set(result.stdout.split())
     assert ignored == {"data/pdfs/a.pdf", "data/text/a.md", "data/transcripts/a/page-0001.json", "data/~$labels.xlsx"}
+
+
+def test_status_counts_pdfs_whatever_the_case_of_their_extension(project: Path) -> None:
+    """Reported from a real run on CUAD: status said 0 of 199 PDFs where extract would read 510."""
+    pdf_dir = project / "data" / "pdfs"
+    for name in ("a.pdf", "B.PDF", "c .Pdf"):
+        (pdf_dir / name).write_bytes(b"%PDF-1.4")
+    (pdf_dir / "notes.docx").write_bytes(b"not a pdf")
+    detail = next(step.detail for step in derive(project).steps if step.name == "text extracted")
+    assert detail == "0 of 3 PDF(s) cached"

@@ -17,6 +17,7 @@ from pathlib import Path
 
 from doc_harness.config import Config, ConfigError
 from doc_harness.dataset import DatasetError, load_labels, load_splits
+from doc_harness.extract import is_pdf
 from doc_harness.guards import read_holdout_lock
 from doc_harness.labeling import PLAN_FILE, SHEET_FILE, LabelPlan, load_plan
 from doc_harness.registry import Registry, TaskSpecError
@@ -132,7 +133,8 @@ def derive(project_dir: Path) -> ProjectState:
     if config is not None and not config.models.task:
         blockers.append("config.yaml: models.task is not set; the harness will not choose a model for you")
 
-    pdf_count = _count(data / "pdfs", "*.pdf")
+    pdf_dir = data / "pdfs"
+    pdf_count = sum(1 for path in pdf_dir.iterdir() if is_pdf(path)) if pdf_dir.is_dir() else 0
     text_count = _count(data / "text", "*.md")
     manifest = data / "extraction_manifest.csv"
 
