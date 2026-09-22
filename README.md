@@ -89,6 +89,40 @@ make sync
 Each project is its own GitHub repo. It does not contain the harness: it pins an exact
 harness version and installs it from this repo's tags. Nothing here is forked or copied.
 
+### Claude works through this with you
+
+You do not have to memorize the steps below. A new project ships with a guidance layer --
+`CLAUDE.md`, `.claude/commands/` and `docs/protocol.md` -- that a Claude Code session
+started inside the project folder reads on its own. Working through it is a conversation:
+Claude runs the commands, explains what each one is for, and stops at the points where the
+answer is yours.
+
+**What Claude does.** Reads a few documents and helps you word `tasks.yaml`, so each
+question carries its own definition. Runs `extract`, `sample-labels`, `label-sheet`,
+`import-labels`, `make-splits`, `run-baseline`, `compile`, `holdout`, `production` and
+`close`. Reads what comes back -- per-task scores, `failures.md`, the QA report -- and says
+what it means and what to do next. Every phase has a command file behind it, so the answer
+is grounded in the project's own guidance rather than in whatever it remembers.
+
+**What Claude asks you.** The decisions with consequences, each recorded in `decisions.md`:
+how many documents to label, whether the labeling sheet arrives prefilled, what to do about
+a class with too few examples, whether to accept a compiled program over the baseline, and
+when to spend the holdout.
+
+**What Claude will not do.** Fill in your labels, and especially not the shaded holdout
+rows -- labels written by a model are not human labels, and on the holdout they would
+measure the model against itself. Open the holdout twice, raise the experiment budget, or
+edit the installed harness to get past a gate. Those refusals are enforced in code, not left
+to good intentions, and each one explains itself.
+
+**Starting each session**, ask for `doc-harness status` first. Phase is derived from what
+is actually on disk, so it is right even when the conversation has moved on or is new. Each
+phase also has a slash command -- `/status`, `/extract`, `/label-sheet`, `/make-splits` and
+so on -- that loads that phase's guidance directly.
+
+**If Claude gets stuck**, the fix belongs in the harness, not in the project. A project that
+has to edit the installed package to make progress has found a harness bug worth reporting.
+
 ### What you need first
 
 - pyenv, with the Python the project will use: `pyenv install 3.12.11`.
@@ -145,10 +179,11 @@ Copy the PDFs into `data/pdfs/`, then start Claude Code from inside the project 
 claude
 ```
 
-Starting there is what loads the project's `CLAUDE.md` and `.claude/commands/`. The
-guidance tells Claude to run `doc-harness status` first, and `status` always says which
-step is next. From here Claude can run the commands; the steps below are what it runs, and
-what you decide along the way.
+Starting there is what loads the project's `CLAUDE.md` and `.claude/commands/`. Ask it to
+run `doc-harness status` first; `status` always says which step is next. From here the work
+is the conversation described in **Claude works through this with you** above: the steps
+below are what Claude runs, and what you decide along the way. You can also run any command
+yourself -- they are the same commands either way.
 
 ### 4. Declare the tasks and pick the model
 
