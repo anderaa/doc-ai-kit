@@ -15,7 +15,7 @@ pdfs -> text cache -> DSPy program -> typed outputs -> normalize -> match
                       optimizer <----- metric <----------------- gold labels
 ```
 
-## How it works, in plain terms
+## How it works
 
 A project asks the same questions about every document in a pile: *Which state's law
 governs this contract? What is it worth? Who signed it?* Claude can answer these, but how
@@ -258,7 +258,7 @@ in `config.yaml` caps the number of runs; it is set before starting, not raised 
 the results look close. Read the per-task numbers and `failures.md` after each run, not only
 the aggregate. `doc-harness adjudicate <run_id>` lists borderline matches for you to check.
 
-### 11. Measure the holdout, once
+### 11. Measure the holdout once
 
 ```
 doc-harness holdout
