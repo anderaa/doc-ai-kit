@@ -194,6 +194,7 @@ def produce(
     resume: bool = True,
     batch_client: Any = None,
     sleep: Callable[[float], None] = time.sleep,
+    run_dir: Path | None = None,
 ) -> list[DocumentOutcome]:
     """Run the compiled program over the whole corpus, checkpointing as it goes.
 
@@ -205,11 +206,13 @@ def produce(
     :param resume: Reuse checkpointed successes and submitted batches rather than re-running them
     :param batch_client: An Anthropic client for the Batch API; created on demand if not given
     :param sleep: How to wait between batch status checks; injected so tests do not wait
+    :param run_dir: Where checkpoints and batch state go; runs/production unless given. The
+        labeling prefill passes its own, so it never mixes with the real production run
     :returns: One outcome per document, in corpus order regardless of completion order
     """
     import dspy
 
-    production_dir = project_dir / "runs" / "production"
+    production_dir = run_dir if run_dir is not None else project_dir / "runs" / "production"
     raw_dir = production_dir / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
     if not resume:

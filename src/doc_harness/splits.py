@@ -2,8 +2,9 @@
 
 Everything downstream rests on this. Three rules drive the design:
 
-* splits are created from a fixed seed **before any model sees any document**, so the
-  holdout cannot be chosen to flatter a program that already exists;
+* the holdout is fixed from a seed **before any model sees any document** -- by
+  ``sample-labels`` when the harness drew the labeling sample -- so it cannot be chosen to
+  flatter a program that already exists, and it can be labeled blind;
 * a class may never appear in the holdout without appearing in train, or the holdout is
   measuring something the program was never shown;
 * support, not document count, is the binding constraint. At prevalence p a random sample
@@ -201,6 +202,11 @@ def half_width_table() -> list[str]:
     return lines
 
 
+def holdout_share_for(count: int) -> float:
+    """Return the share of a labeled corpus of this size that the protocol holds out."""
+    return _strategy_for(count)[0][2]
+
+
 def _strategy_for(count: int) -> tuple[tuple[float, float, float], str, bool]:
     """Return the ratios, the strategy name, and whether cross-validation applies."""
     for threshold, ratios, name in RATIOS:
@@ -257,6 +263,7 @@ def make_splits(
     records: Sequence[LabelRecord],
     seed: int,
     ratios: tuple[float, float, float] | None = None,
+    holdout: Sequence[str] | None = None,
 ) -> Splits:
     """Build the train/validation/holdout assignment.
 
@@ -264,6 +271,9 @@ def make_splits(
     :param records: Every labeled document
     :param seed: The fixed seed, committed to splits.json
     :param ratios: Optional explicit ratios, overriding the size-based table
+    :param holdout: A holdout drawn before labeling began, kept as it is. Only train and
+        validation are then stratified. The holdout has to be fixed that early to be labeled
+        blind, because the other documents are labeled by correcting model output
     :returns: The split assignment, with folds populated under the cross-validation regime
     """
     if not records:
@@ -271,6 +281,19 @@ def make_splits(
     count = len(records)
     table_ratios, strategy, use_cv = _strategy_for(count)
     ratios = ratios or table_ratios
+    fixed_holdout: list[str] = []
+    pool_records = list(records)
+    if holdout is not None:
+        labeled = {record.doc_id for record in records}
+        unlabeled = sorted(set(holdout) - labeled)
+        if unlabeled:
+            raise SplitError(f"{len(unlabeled)} holdout document(s) are not labeled: {', '.join(unlabeled)}")
+        fixed_holdout = sorted(set(holdout))
+        pool_records = [record for record in records if record.doc_id not in set(fixed_holdout)]
+        kept = ratios[0] + ratios[1]
+        # the holdout's share was taken when it was drawn; the rest divides in the table's proportions
+        ratios = (ratios[0] / kept, ratios[1] / kept, 0.0) if kept > 0 else (1.0, 0.0, 0.0)
+        strategy = f"{strategy}, holdout drawn before labeling"
     if count < TOO_FEW:
         logger.warning(
             "only %d labeled documents: too few points for automated search. "
@@ -286,11 +309,11 @@ def make_splits(
         if support.count > 0
     }
     groups: dict[str, list[str]] = {}
-    for record in records:
+    for record in pool_records:
         groups.setdefault(_stratification_key(record, rarity), []).append(record.doc_id)
 
     rng = random.Random(seed)
-    assignments: dict[str, list[str]] = {"train": [], "val": [], "holdout": []}
+    assignments: dict[str, list[str]] = {"train": [], "val": [], "holdout": list(fixed_holdout)}
     for key in sorted(groups):
         members = sorted(groups[key])
         rng.shuffle(members)

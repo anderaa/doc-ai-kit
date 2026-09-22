@@ -181,7 +181,7 @@ def write_labels(path: Path, records: Iterable[LabelRecord]) -> None:
 def load_splits(path: Path) -> Splits:
     """Read splits.json."""
     if not path.exists():
-        raise DatasetError(f"{path} does not exist; run make-splits before anything sees a document")
+        raise DatasetError(f"{path} does not exist; run `doc-harness make-splits` first")
     return Splits.from_dict(json.loads(path.read_text(encoding="utf-8")))
 
 

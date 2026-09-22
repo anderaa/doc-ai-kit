@@ -7,7 +7,8 @@ description: Check labels against the declared tasks and write the annotation ru
 ## Entry conditions
 
 - `tasks.yaml` parses and declares every task the project answers.
-- `data/labels.jsonl` exists with at least some labeled documents.
+- `data/labels.jsonl` exists with at least some labeled documents: written by
+  `import-labels`, or brought in by a project that already had labels.
 
 ## Why it exists
 

@@ -4,6 +4,46 @@ Projects pin one exact harness version. Read the entry for a version before movi
 project onto it: some releases change how answers are scored, and a number measured under
 one version is not comparable with a number measured under another.
 
+## Unreleased
+
+**Does not change scores or prompts.** Adds a labeling step before `audit-labels`; projects
+that already have `labels.jsonl` are unaffected and split exactly as before.
+
+Upgrading a project:
+
+- **Re-lock after moving the pin** (`make lock && make sync`): this release adds `openpyxl`.
+- Nothing else changes for a project that already has labels. With no `label_plan.json`,
+  `make-splits` stratifies the whole split as before.
+- **Fix the project's `.gitignore` by hand.** A project's copy is its own and is not updated.
+  Replace the `data/` line with `data/pdfs/`, `data/text/` and `data/~$*`, then commit
+  `labels.jsonl`, `splits.json` and `annotation_rules.md`.
+
+Changes:
+
+- **A spreadsheet labeling step**: `sample-labels`, `label-sheet`, `import-labels`.
+  - `sample-labels --count N` draws the documents to label, and the holdout among them, at
+    random, before any model runs. The brief wants the holdout labeled blind and everything
+    else corrected from model output. That only works if the holdout is known before the
+    model runs, and nothing is labeled yet to stratify on, so the holdout is random.
+  - `label-sheet` runs the zero-shot program on the sample **outside** the holdout (Batch API
+    by default, resumable) and writes `data/labels.xlsx`: model answers to correct, empty
+    holdout rows to label blind, dropdowns for yes/no and enum columns, and a guide tab.
+    It is `.xlsx` because Excel rewrites CSV cells on open: leading zeros go, dates change.
+  - `import-labels` reads each cell with the scoring normalizers (`$1.25M`, `June 15, 2024`),
+    turns a pasted passage into offsets, lists every problem at once, and writes nothing
+    until all of them pass. It also reads a CSV export.
+  - Each document's labeling mode is taken from the plan, not from the sheet. A document
+    shown model answers is `corrected` for good.
+- `make-splits` keeps a holdout drawn by `sample-labels` and stratifies only train and
+  validation. It refuses while a holdout document is neither labeled nor skipped with a
+  reason, and says when a holdout document moves to train for carrying a class train lacks.
+- `status` shows the two new steps, labeling progress, and a sheet changed since the last
+  import.
+- `produce()` takes a `run_dir`, so the labeling prefill checkpoints to `runs/prelabel/`.
+- **New projects commit their ground truth.** The scaffold's `.gitignore` excluded all of
+  `data/`, so `splits.json` could not be committed even though the guidance says to. It now
+  excludes only the PDFs, the cached text and Excel's lock file.
+
 ## 0.1.5
 
 **Does not change scores or prompts.** Production sends the same requests and parses replies the

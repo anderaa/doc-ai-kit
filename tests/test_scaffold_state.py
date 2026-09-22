@@ -46,9 +46,12 @@ def test_scaffold_writes_the_guidance_layer(project: Path) -> None:
         "compile",
         "extract",
         "holdout",
+        "import-labels",
+        "label-sheet",
         "make-splits",
         "production",
         "run-baseline",
+        "sample-labels",
         "status",
     ]
     skills = sorted(path.name for path in (project / ".claude" / "skills").iterdir())
@@ -325,3 +328,28 @@ def test_baseline_report_is_not_counted_as_a_run(project: Path, fixtures_dir: Pa
     detail = next(step.detail for step in derive(project).steps if step.name == "baselines recorded")
     assert "1 baseline run(s)" in detail
     assert "baseline_report.md" not in detail
+
+
+def test_ground_truth_is_committed_and_documents_are_not(project: Path, tmp_path: Path) -> None:
+    """The guidance says to commit splits.json; a gitignore covering all of data/ made that impossible."""
+    import shutil
+    import subprocess
+
+    if shutil.which("git") is None:
+        pytest.skip("git is not installed")
+    subprocess.run(["git", "init", "-q", str(project)], check=True)
+    paths = [
+        "data/labels.jsonl",
+        "data/splits.json",
+        "data/label_plan.json",
+        "data/labels.xlsx",
+        "data/annotation_rules.md",
+        "data/pdfs/a.pdf",
+        "data/text/a.md",
+        "data/~$labels.xlsx",
+    ]
+    result = subprocess.run(
+        ["git", "-C", str(project), "check-ignore", "--no-index", *paths], capture_output=True, text=True
+    )
+    ignored = set(result.stdout.split())
+    assert ignored == {"data/pdfs/a.pdf", "data/text/a.md", "data/~$labels.xlsx"}

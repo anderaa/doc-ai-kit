@@ -35,8 +35,8 @@ newproject "Acme Contracts"
 
 `newproject` runs outside any project, because what it writes is the exact harness pin the
 project installs. Everything else runs from inside the project: `status`, `extract`,
-`audit-labels`, `make-splits`, `run-baseline`, `compile`, `rescore`, `adjudicate`,
-`holdout`, `production`, `close`.
+`sample-labels`, `label-sheet`, `import-labels`, `audit-labels`, `make-splits`,
+`run-baseline`, `compile`, `rescore`, `adjudicate`, `holdout`, `production`, `close`.
 
 ## What is load-bearing
 
@@ -67,6 +67,10 @@ failure is silent -- the numbers keep going up while the measurement stops meani
   interrupted run collects what it paid for instead of paying again.
 - **Every run saves its predictions.** Fixing a matcher and re-measuring costs nothing
   (`doc-harness rescore`), so nobody is tempted to leave the bug in to avoid paying again.
+- **The holdout is drawn before any model runs, and labeled blind.** Labeling happens in a
+  spreadsheet. Rows outside the holdout come prefilled with model answers to correct; holdout
+  rows come empty, and the model is never run on them. Import reads each cell with the
+  scoring normalizers and refuses a label that could not be scored.
 - **Threshold decisions are surfaced, not buried.** `doc-harness adjudicate` lists every call a
   threshold actually made, raw and normalized side by side, for a human to confirm.
 
@@ -81,6 +85,7 @@ src/doc_harness/
   evaluate.py     dspy.Evaluate wrapper -> metrics.json, failures.md
   extract.py      pdf -> text cache
   splits.py       stratification, enrichment strata, the support floor
+  labeling.py     the labeling sample, the spreadsheet, reading labels back
   optimize.py     optimizer runs, leaderboard, budget enforcement
   baseline.py     the three baselines
   report.py       holdout reading, REPORT.md, the ledger

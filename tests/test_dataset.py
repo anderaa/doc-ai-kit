@@ -122,7 +122,7 @@ def test_missing_split_fails_loudly() -> None:
 
 
 def test_missing_splits_file_says_what_to_do(tmp_path: Path) -> None:
-    with pytest.raises(DatasetError, match="before anything sees a document"):
+    with pytest.raises(DatasetError, match="doc-harness make-splits"):
         load_splits(tmp_path / "splits.json")
 
 

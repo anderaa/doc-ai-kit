@@ -634,6 +634,10 @@ dspy==3.3.1 \
     --hash=sha256:250049f565f52c014609ce2d3ca0de17a6c9449ac961492d61a009aa30dceabf \
     --hash=sha256:ca53a428ac6a30984a894cf3847cf623b7dd7e8aadf8a63620b1f1f6155e4eaf
     # via doc-harness (pyproject.toml)
+et-xmlfile==2.0.0 \
+    --hash=sha256:7a91720bc756843502c3b7504c77b8fe44217c85c537d85037f0f536151b2caa \
+    --hash=sha256:dab3f4764309081ce75662649be815c4c9081e88f0837825f90fd28317d4da54
+    # via openpyxl
 fastuuid==0.14.0 \
     --hash=sha256:05a8dde1f395e0c9b4be515b7a521403d1e8349443e7641761af07c7ad1624b1 \
     --hash=sha256:0737606764b29785566f968bd8005eace73d3666bd0862f33a760796e26d1ede \
@@ -1627,6 +1631,10 @@ openai==2.54.0 \
     # via
     #   dspy
     #   litellm
+openpyxl==3.1.5 \
+    --hash=sha256:5282c12b107bffeef825f4617dc029afaf41d0ea60823bbb665ef3079dc79de2 \
+    --hash=sha256:cf0e3cf56142039133628b5acffe8ef0c12bc902d2aadd3e0fe5878dc08d1050
+    # via doc-harness (pyproject.toml)
 optuna==5.0.0 \
     --hash=sha256:358bb878b7b1e20e90dc944ac4261796dd3d5c2b7860aa960a08fc10e0b5beff \
     --hash=sha256:5fff892ae6baf4948c810c5b8635ec67e08efb0709b41cb73b14e30391d44720
@@ -2877,6 +2885,10 @@ truststore==0.10.4 \
     # via
     #   httpcore2
     #   httpx2
+types-openpyxl==3.1.5.20260827 \
+    --hash=sha256:94e176d871d12e3cbc34f8fb03dc14db2a4245a6690791daf16fc7b08fd67869 \
+    --hash=sha256:be8b605fb99cfd7d5f5576d4a508e8ec44be2dd15b85157c559080de6384be34
+    # via doc-harness (pyproject.toml)
 types-python-dateutil==2.9.0.20260807 \
     --hash=sha256:54aa3707350ed7a9cc0776fd2f6739679d6967d11b40150985e81edcb86df4db \
     --hash=sha256:e0b8a90d464c8684c66b7b8e4556d9074afdddcc56ca45323f0987134f9e7034

@@ -54,15 +54,28 @@ This is not fastidiousness. If holdout labels are produced by correcting the mod
 the labels are correlated with what is being measured, and every number computed against them
 is inflated. The harness checks the labeling mode and blocks if the holdout is not blind.
 
+The holdout therefore has to be chosen before the model runs on anything:
+
+1. `doc-harness sample-labels --count N` draws the documents to label, and the holdout among
+   them, at random. No model has seen a document yet.
+2. `doc-harness label-sheet` runs the zero-shot program on the sample **outside** the holdout
+   and writes `data/labels.xlsx`: model answers to correct, and empty holdout rows to label
+   blind.
+3. Fill it in, in Excel or Google Sheets. The `guide` tab says how. A span is labeled by
+   pasting the passage; the harness finds its position.
+4. `doc-harness import-labels` checks every cell, lists every problem at once, and writes
+   `labels.jsonl` only when all of them pass. Run it as often as you like.
+
 Then `doc-harness audit-labels`, and write `data/annotation_rules.md`: for each task, the rule
 you actually applied and the edge cases you had to decide. It is a gate for `compile`, because
 a task whose rule was never written down cannot be scored consistently.
 
-## 4. Make the splits, before anything sees a document
+## 4. Make the splits
 
-`doc-harness make-splits`, from a fixed seed committed to `splits.json`. Two invariants are
-enforced in code: every document lands in exactly one split, and no class appears in the
-holdout without appearing in train.
+`doc-harness make-splits`, from a fixed seed committed to `splits.json`. The holdout is the one
+drawn in step 3; only train and validation are divided here, stratified on the labels. Two
+invariants are enforced in code: every document lands in exactly one split, and no class
+appears in the holdout without appearing in train.
 
 Then the support-floor stop. For every class with fewer labeled examples than the floor, the
 command shows you the numbers and asks for a decision: enrich, collapse, split out as a binary

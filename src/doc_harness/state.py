@@ -18,6 +18,7 @@ from pathlib import Path
 from doc_harness.config import Config, ConfigError
 from doc_harness.dataset import DatasetError, load_labels, load_splits
 from doc_harness.guards import read_holdout_lock
+from doc_harness.labeling import PLAN_FILE, SHEET_FILE, LabelPlan, load_plan
 from doc_harness.registry import Registry, TaskSpecError
 
 logger = logging.getLogger(__name__)
@@ -85,6 +86,25 @@ def _champion_detail(experiments: list[str], champion: dict[str, object] | None)
     return f"{len(experiments)} experiment(s); champion {champion['exp_id']} at {float(str(champion['aggregate'])):.3f}"
 
 
+def _sample_detail(plan: LabelPlan | None, has_labels: bool) -> str:
+    """Describe the labeling sample."""
+    if plan is not None:
+        return f"{len(plan.sampled)} of {plan.corpus_size} to label, {len(plan.holdout)} of them holdout (blind)"
+    return "labels brought in directly, without a sample" if has_labels else "not drawn"
+
+
+def _labeled_detail(plan: LabelPlan | None, labeled: set[str]) -> str:
+    """Describe labeling progress against the sample."""
+    if plan is None:
+        return f"{len(labeled)} labeled document(s)"
+    holdout_done = len(set(plan.holdout) & labeled)
+    detail = (
+        f"{len(set(plan.sampled) & labeled)} of {len(plan.sampled)} labeled "
+        f"({holdout_done} of {len(plan.holdout)} holdout)"
+    )
+    return f"{detail}, {len(plan.skipped)} skipped" if plan.skipped else detail
+
+
 def derive(project_dir: Path) -> ProjectState:
     """Work out where a project stands by looking at its files.
 
@@ -119,13 +139,25 @@ def derive(project_dir: Path) -> ProjectState:
     labels_path = data / "labels.jsonl"
     label_count = 0
     blind_count = 0
+    labeled: set[str] = set()
     if labels_path.exists():
         try:
             records = load_labels(labels_path)
             label_count = len(records)
+            labeled = {record.doc_id for record in records}
             blind_count = sum(1 for record in records if record.labeling_mode == "blind")
         except DatasetError as exc:
             blockers.append(f"labels.jsonl: {exc}")
+
+    plan: LabelPlan | None = None
+    if (data / PLAN_FILE).exists():
+        try:
+            plan = load_plan(data / PLAN_FILE)
+        except (DatasetError, ValueError) as exc:
+            blockers.append(f"{PLAN_FILE}: {exc}")
+    sheet = data / SHEET_FILE
+    if sheet.exists() and (not labels_path.exists() or sheet.stat().st_mtime > labels_path.stat().st_mtime):
+        warnings.append(f"{SHEET_FILE} has changed since the last import; run `doc-harness import-labels`")
 
     rules = data / "annotation_rules.md"
     splits_path = data / "splits.json"
@@ -175,6 +207,18 @@ def derive(project_dir: Path) -> ProjectState:
             "doc-harness extract",
             text_count > 0 and manifest.exists(),
             f"{text_count} of {pdf_count} PDF(s) cached" if pdf_count else "no PDFs in data/pdfs",
+        ),
+        Step(
+            "documents sampled",
+            "doc-harness sample-labels --count N",
+            plan is not None or labels_path.exists(),
+            _sample_detail(plan, labels_path.exists()),
+        ),
+        Step(
+            "labels imported",
+            "doc-harness label-sheet, then doc-harness import-labels",
+            labels_path.exists(),
+            _labeled_detail(plan, labeled),
         ),
         Step(
             "labels audited",

@@ -31,6 +31,7 @@ from doc_harness.dataset import (
     load_splits,
     select,
     validate_against_registry,
+    write_labels,
     write_splits,
 )
 from doc_harness.evaluate import (
@@ -44,10 +45,22 @@ from doc_harness.evaluate import (
 from doc_harness.extract import extract_corpus, load_texts
 from doc_harness.guards import GuardError, require_files
 from doc_harness.hooks import load_project_customizations
+from doc_harness.labeling import (
+    PLAN_FILE,
+    REVIEWED,
+    SHEET_FILE,
+    SKIPPED,
+    draw_sample,
+    import_rows,
+    load_plan,
+    read_sheet,
+    write_plan,
+    write_sheet,
+)
 from doc_harness.metric import build_metric
 from doc_harness.optimize import require_champion, run_experiment
 from doc_harness.produce import ProductionResult, produce, run_qa, triage, write_outputs, write_qa_report
-from doc_harness.program import load_program, task_lm
+from doc_harness.program import build_program, load_program, task_lm
 from doc_harness.registry import Registry
 from doc_harness.report import append_ledger, run_holdout, write_report
 from doc_harness.scaffold_writer import HARNESS_REPO, PIN_MODES, ScaffoldOptions, create_project
@@ -55,6 +68,7 @@ from doc_harness.splits import (
     SUPPORT_OPTIONS,
     below_floor,
     class_supports,
+    holdout_share_for,
     make_splits,
     support_floor_prompt,
 )
@@ -191,6 +205,199 @@ def extract(project: Project, force: bool) -> None:
         )
 
 
+@cli.command("sample-labels")
+@click.option("--count", type=int, required=True, help="How many documents to label.")
+@click.option(
+    "--holdout-share",
+    type=float,
+    default=None,
+    help="Fraction of them to hold out. Defaults to the protocol's share for that many documents.",
+)
+@click.option("--force", is_flag=True, help="Redraw the sample. Refused once any labels exist.")
+@pass_project
+def sample_labels(project: Project, count: int, holdout_share: float | None, force: bool) -> None:
+    """Choose which documents to label, and which of them are the holdout.
+
+    Runs before any model sees a document. The holdout is fixed here so its rows can go out
+    empty and be labeled blind, while the rest are labeled by correcting model answers.
+    """
+    plan_path = project.data / PLAN_FILE
+    labels_path = project.data / "labels.jsonl"
+    if plan_path.exists() and not force:
+        raise click.ClickException(
+            f"{plan_path} already exists. The sample is drawn once; redrawing it after looking at "
+            "documents lets the choice drift toward easy ones. Pass --force only if nothing has been labeled."
+        )
+    if plan_path.exists() and labels_path.exists():
+        raise click.ClickException(
+            f"{labels_path} already holds labels made against the current sample, so it cannot be redrawn. "
+            "Move labels.jsonl aside deliberately first, and say why in decisions.md."
+        )
+    doc_ids = sorted(path.stem for path in (project.data / "text").glob("*.md"))
+    share = holdout_share if holdout_share is not None else holdout_share_for(count)
+    plan = draw_sample(doc_ids, count, share, seed=project.config.splits.seed)
+    write_plan(plan_path, plan)
+    project.record_decision(
+        "labeling sample",
+        f"- Documents to label: **{len(plan.sampled)}** of {plan.corpus_size}, drawn at random (seed {plan.seed})\n"
+        f"- Holdout: **{len(plan.holdout)}**, drawn at random from the sample, labeled blind\n"
+        f"- To correct from model answers: **{len(plan.to_correct)}**",
+    )
+    click.echo(
+        f"Sampled {len(plan.sampled)} of {plan.corpus_size} document(s): {len(plan.holdout)} holdout "
+        f"(labeled blind), {len(plan.to_correct)} to correct from model answers.\nWrote {plan_path}.\n\n"
+        "Next: doc-harness label-sheet"
+    )
+
+
+@cli.command("label-sheet")
+@click.option("--no-prefill", is_flag=True, help="Leave every row empty: label everything blind, spending nothing.")
+@click.option("--live", is_flag=True, help="Prefill with live calls, not the Batch API: faster, twice the price.")
+@click.option("--force", is_flag=True, help="Rewrite an existing sheet, keeping only what has been imported.")
+@pass_project
+def label_sheet(project: Project, no_prefill: bool, live: bool, force: bool) -> None:
+    """Write data/labels.xlsx: one row per sampled document, ready to fill in.
+
+    Rows outside the holdout are prefilled with the model's answers, to be corrected. Holdout
+    rows are left empty, and the model is never run on them. Rows already imported keep
+    their labels.
+    """
+    project.load_customizations()
+    plan_path = project.data / PLAN_FILE
+    plan = load_plan(plan_path)
+    sheet_path = project.data / SHEET_FILE
+    if sheet_path.exists() and not force:
+        raise click.ClickException(
+            f"{sheet_path} already exists and may hold work that is not imported yet. Run "
+            "`doc-harness import-labels` first; then --force rewrites it from the imported labels."
+        )
+
+    labels_path = project.data / "labels.jsonl"
+    records = load_labels(labels_path) if labels_path.exists() else []
+    values: dict[str, dict[str, Any]] = {record.doc_id: dict(record.labels) for record in records}
+    reviewed = {record.doc_id: REVIEWED for record in records}
+    notes = {record.doc_id: record.notes for record in records}
+    for doc_id, reason in plan.skipped.items():
+        reviewed[doc_id] = SKIPPED
+        notes[doc_id] = reason
+
+    to_prefill = [doc_id for doc_id in plan.to_correct if doc_id not in values and doc_id not in plan.skipped]
+    if to_prefill and not no_prefill:
+        values.update(_prefill(project, plan.holdout, to_prefill, live))
+        # recorded before the sheet exists: once a row shows model answers, it is labeled by correction
+        plan.prefilled = sorted(set(plan.prefilled) | {doc_id for doc_id in to_prefill if doc_id in values})
+        write_plan(plan_path, plan)
+
+    write_sheet(sheet_path, project.registry, plan, values, reviewed, notes, project.data / "text")
+    blank = sum(1 for doc_id in plan.to_correct if doc_id not in values and doc_id not in plan.skipped)
+    click.echo(
+        f"Wrote {sheet_path}: {len(plan.sampled)} row(s), {len(plan.holdout)} holdout row(s) left empty to label "
+        f"blind" + (f", {blank} other row(s) with no model answers" if blank else "") + ".\n\n"
+        f"Open it in Excel or Google Sheets and read the guide tab. Set {REVIEWED!r} on each finished row, "
+        "then run: doc-harness import-labels"
+    )
+
+
+def _prefill(project: Project, holdout: Sequence[str], doc_ids: Sequence[str], live: bool) -> dict[str, dict[str, Any]]:
+    """Run the zero-shot program over documents to be corrected, and return its answers."""
+    from doc_harness.produce import produce as run_program_over
+
+    shown = sorted(set(doc_ids) & set(holdout))
+    if shown:
+        raise GuardError(f"refusing to run the model on holdout document(s): {', '.join(shown)}")
+    project.configure_lm()
+    config = project.config
+    if live:
+        config = config.model_copy(update={"production": config.production.model_copy(update={"use_batch_api": False})})
+    module = _load_baseline_module(project)
+    instructions = module.starting_instructions() if module and hasattr(module, "starting_instructions") else None
+    program = build_program(project.registry, config.optimization.module, instructions=instructions or None)
+    click.echo(f"Prefilling {len(doc_ids)} document(s) with {config.models.task}; the holdout is not sent.")
+    outcomes = run_program_over(
+        project.registry,
+        config,
+        program,
+        load_texts(project.data / "text", doc_ids),
+        project.directory,
+        run_dir=project.runs / "prelabel",
+    )
+    failed = [outcome.doc_id for outcome in outcomes if not outcome.ok]
+    if failed:
+        click.echo(f"{len(failed)} document(s) got no usable answer and are left empty: {', '.join(failed)}")
+    return {outcome.doc_id: outcome.values for outcome in outcomes if outcome.ok}
+
+
+@cli.command("import-labels")
+@click.option(
+    "--sheet",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="The sheet to read: .xlsx, or a .csv export of it. Defaults to data/labels.xlsx.",
+)
+@click.option("--force", is_flag=True, help="Write even though documents labeled before would lose their labels.")
+@pass_project
+def import_labels(project: Project, sheet: Path | None, force: bool) -> None:
+    """Check the sheet and write its reviewed rows to data/labels.jsonl.
+
+    Every cell of every reviewed row is checked first, and every problem is listed at once.
+    Nothing is written unless all of them pass.
+    """
+    project.load_customizations()
+    plan_path = project.data / PLAN_FILE
+    plan = load_plan(plan_path)
+    sheet_path = sheet or project.data / SHEET_FILE
+    rows = read_sheet(sheet_path, project.registry)
+    sampled = set(plan.sampled)
+    texts = load_texts(project.data / "text", sorted({row.doc_id for row in rows} & sampled))
+    result = import_rows(project.registry, plan, rows, texts)
+
+    if result.warnings:
+        click.echo(f"{len(result.warnings)} warning(s):")
+        for warning in result.warnings:
+            click.echo(f"  - {warning}")
+    if not result.ok:
+        click.echo(f"{len(result.problems)} problem(s); nothing was written:")
+        for problem in result.problems:
+            click.echo(f"  - {problem}")
+        raise SystemExit(1)
+    if not result.records:
+        raise click.ClickException(f"no row is marked {REVIEWED!r} in the {sheet_path.name} sheet; nothing to import")
+
+    labels_path = project.data / "labels.jsonl"
+    imported = {record.doc_id for record in result.records}
+    splits_path = project.data / "splits.json"
+    if splits_path.exists():
+        splits = load_splits(splits_path)
+        unlabeled = sorted(set(splits.train + splits.val + splits.holdout) - imported)
+        if unlabeled:
+            raise click.ClickException(
+                f"{len(unlabeled)} document(s) in splits.json would have no label: {', '.join(unlabeled[:10])}. "
+                f"Mark them {REVIEWED!r} in the sheet."
+            )
+    if labels_path.exists() and not force:
+        lost = sorted({record.doc_id for record in load_labels(labels_path)} - imported)
+        if lost:
+            raise click.ClickException(
+                f"{len(lost)} document(s) labeled before are not reviewed rows in this sheet, and would lose their "
+                f"labels: {', '.join(lost[:10])}. Mark them {REVIEWED!r}, or pass --force if that is intended."
+            )
+
+    order = {doc_id: index for index, doc_id in enumerate(plan.sampled)}
+    write_labels(labels_path, sorted(result.records, key=lambda record: order[record.doc_id]))
+    plan.skipped = result.skipped
+    write_plan(plan_path, plan)
+
+    blind = sum(1 for record in result.records if record.labeling_mode == "blind")
+    holdout_done = len(set(plan.holdout) & imported)
+    click.echo(
+        f"Wrote {labels_path}: {len(result.records)} document(s), {len(result.records) - blind} corrected and "
+        f"{blind} blind.\nHoldout: {holdout_done} of {len(plan.holdout)} labeled."
+        + (f"\n{len(result.skipped)} skipped." if result.skipped else "")
+        + (f"\n{len(result.unreviewed)} not reviewed yet." if result.unreviewed else "")
+        + "\n\nNext: doc-harness audit-labels"
+    )
+
+
 @cli.command("audit-labels")
 @pass_project
 def audit_labels(project: Project) -> None:
@@ -236,12 +443,13 @@ def make_splits_command(project: Project, non_interactive: bool, force: bool) ->
     splits_path = project.data / "splits.json"
     if splits_path.exists() and not force:
         raise click.ClickException(
-            f"{splits_path} already exists. Splits are created once, before any model sees any "
-            "document; re-rolling them after the fact means the holdout is no longer a holdout. "
+            f"{splits_path} already exists. Splits are created once; re-rolling them after the "
+            "fact means the holdout is no longer a holdout. "
             "Pass --force only if nothing has been run against them yet."
         )
     records = load_labels(project.data / "labels.jsonl")
     floor = project.config.splits.support_floor
+    holdout = _planned_holdout(project, records)
 
     rare = below_floor(class_supports(project.registry, records), floor)
     if rare:
@@ -272,12 +480,48 @@ def make_splits_command(project: Project, non_interactive: bool, force: bool) ->
                 )
             click.echo("")
 
-    splits = make_splits(project.registry, records, seed=project.config.splits.seed)
+    splits = make_splits(project.registry, records, seed=project.config.splits.seed, holdout=holdout)
     write_splits(splits_path, splits)
+    moved = sorted(set(holdout or []) - set(splits.holdout))
+    if moved:
+        click.echo(
+            f"{len(moved)} holdout document(s) moved to train, because they carried a class no training "
+            f"document had: {', '.join(moved)}."
+        )
     click.echo(
         f"{splits.strategy}: {len(splits.train)} train, {len(splits.val)} val, "
         f"{len(splits.holdout)} holdout, seed {splits.seed}.\nWrote {splits_path}."
     )
+
+
+def _planned_holdout(project: Project, records: Sequence[Any]) -> list[str] | None:
+    """Return the holdout drawn by sample-labels, refusing if part of it went unlabeled.
+
+    Projects that brought their own labels have no plan, and are split as before.
+    """
+    plan_path = project.data / PLAN_FILE
+    if not plan_path.exists():
+        return None
+    plan = load_plan(plan_path)
+    labeled = {record.doc_id for record in records}
+    unlabeled = [doc_id for doc_id in plan.holdout if doc_id not in labeled and doc_id not in plan.skipped]
+    if unlabeled:
+        raise click.ClickException(
+            f"{len(unlabeled)} holdout document(s) are neither labeled nor skipped: {', '.join(unlabeled)}. "
+            "Leaving the hard ones out quietly makes the holdout easier than the corpus. Label them, or "
+            "skip them in the sheet with a reason."
+        )
+    skipped = sorted(set(plan.holdout) & set(plan.skipped))
+    if skipped:
+        click.echo(f"{len(skipped)} holdout document(s) were skipped and are left out: {', '.join(skipped)}.")
+        project.record_decision(
+            "holdout documents skipped",
+            "\n".join(f"- {doc_id}: {plan.skipped[doc_id]}" for doc_id in skipped),
+        )
+    waiting = [doc_id for doc_id in plan.to_correct if doc_id not in labeled and doc_id not in plan.skipped]
+    if waiting:
+        click.echo(f"{len(waiting)} sampled document(s) outside the holdout are not labeled and are left out.")
+    return [doc_id for doc_id in plan.holdout if doc_id in labeled]
 
 
 @cli.command("run-baseline")
@@ -306,18 +550,26 @@ def run_baseline_command(project: Project) -> None:
     click.echo(report.to_markdown())
 
 
-def _project_baseline_inputs(project: Project, trainset: Sequence[Any]) -> tuple[Any, Any]:
-    """Load hand-written demonstrations and instructions from programs/baseline.py."""
+def _load_baseline_module(project: Project) -> Any:
+    """Import programs/baseline.py, or return None if the project has none."""
     import importlib.util
 
     path = project.directory / "programs" / "baseline.py"
     if not path.exists():
-        return None, None
+        return None
     spec = importlib.util.spec_from_file_location("project_baseline", path)
     if spec is None or spec.loader is None:
         raise click.ClickException(f"could not load {path}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    return module
+
+
+def _project_baseline_inputs(project: Project, trainset: Sequence[Any]) -> tuple[Any, Any]:
+    """Load hand-written demonstrations and instructions from programs/baseline.py."""
+    module = _load_baseline_module(project)
+    if module is None:
+        return None, None
     demos = module.hand_written_demos(trainset) if hasattr(module, "hand_written_demos") else None
     instructions = module.starting_instructions() if hasattr(module, "starting_instructions") else None
     return (demos or None), (instructions or None)

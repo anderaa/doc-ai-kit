@@ -53,4 +53,4 @@ against the old text.
 
 ## Next
 
-`audit-labels`.
+`sample-labels`, unless labels already exist.

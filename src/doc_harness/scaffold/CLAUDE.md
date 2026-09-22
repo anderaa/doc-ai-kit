@@ -22,7 +22,9 @@ what is next, and what is blocking. Do that before deciding what to work on.
 3. **The holdout is labeled blind.** Train and validation labels are corrected from
    baseline output, which is two to three times faster. Holdout labels are produced from
    scratch, without seeing any prediction. Anchoring on model output correlates the labels
-   with what is being measured.
+   with what is being measured. `sample-labels` fixes the holdout before any model runs,
+   and `label-sheet` never runs the model on it. Never show a holdout document's model
+   output to whoever is labeling it.
 
 4. **Never edit the installed `doc_harness` package.** Project-specific normalizers,
    matchers and extractors go in `custom/` and register through hooks. If something cannot

@@ -11,8 +11,17 @@ description: Create the fixed train/validation/holdout assignment
 
 ## Why it exists
 
-Splits are created from a fixed seed **before any model sees any document**. A holdout
-chosen after the fact, or re-rolled when the numbers disappoint, is not a holdout.
+Splits are created from a fixed seed, and a holdout chosen after the fact, or re-rolled
+when the numbers disappoint, is not a holdout.
+
+If `sample-labels` drew the sample, the holdout was already fixed there, before any model
+saw a document, so that it could be labeled blind. This command keeps that holdout as it
+is, and stratifies only train and validation. It refuses while any holdout document is
+neither labeled nor skipped with a reason. If a holdout document carries a class that no
+training document has, it moves to train, and the command says which.
+
+A project that brought its own labels, with no `label_plan.json`, gets the whole split
+stratified here as before.
 
 Two invariants are enforced in code, not by care:
 

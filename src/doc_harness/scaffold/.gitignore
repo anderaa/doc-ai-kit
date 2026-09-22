@@ -1,4 +1,10 @@
-data/
+# the documents and their extracted text: bulky, often confidential, and rebuilt by `extract`.
+# Everything else in data/ is ground truth and is committed: the labeling plan and sheet,
+# labels.jsonl, splits.json, annotation_rules.md and the extraction manifest
+data/pdfs/
+data/text/
+# the lock file Excel leaves beside a sheet while it is open
+data/~$*
 runs/
 programs/compiled/
 __pycache__/
