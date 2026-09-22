@@ -15,6 +15,63 @@ pdfs -> text cache -> DSPy program -> typed outputs -> normalize -> match
                       optimizer <----- metric <----------------- gold labels
 ```
 
+## How it works, in plain terms
+
+A project asks the same questions about every document in a pile: *Which state's law
+governs this contract? What is it worth? Who signed it?* Claude can answer these, but how
+well depends heavily on how it is asked. This harness finds a good way to ask, proves how
+well it works, and then asks it of every document.
+
+**The prompt.** For each document, Claude gets a message: some instructions, the questions
+from `tasks.yaml`, sometimes a few worked examples, then the document. It answers all the
+questions in one reply, or in a few when `tasks.yaml` puts questions in separate groups.
+Claude itself is never retrained: all that changes from one attempt to the next is that
+message.
+
+**DSPy.** DSPy is the open-source library that builds and tunes the message. Instead of
+someone rewording a prompt by hand and eyeballing the results, DSPy treats the prompt as
+something to search over: it tries versions, scores each one, and keeps the best.
+
+**Scoring.** A version is only as good as its score, so scoring has to be right. People
+label a sample of documents with the correct answers. Each answer Claude gives is compared
+with the label, using rules that forgive differences that do not matter -- "$1.25M" and
+"1,250,000 USD" count as the same -- and not ones that do. Much of this harness exists to
+get that comparison right, because a scorer that marks right answers wrong sends the whole
+search after a problem that is not there.
+
+**The three piles.** The labeled documents are split, once, into three piles, like a
+student's practice problems, practice test and final exam:
+
+- **Training** -- what DSPy learns from: worked examples are taken from here.
+- **Validation** -- used to compare versions and pick the best one.
+- **Holdout** -- the final exam. No version sees it during the search. The winner is scored
+  on it exactly once, and that is the number reported. It is labeled by people who have
+  not seen Claude's answers, so the answers cannot sway the labels.
+
+**The search.** DSPy's optimizers are different strategies for trying versions:
+
+- **BootstrapFewShot** runs Claude on training documents, keeps the cases it got entirely
+  right, and adds a few of them to the message as worked examples. The harness makes sure
+  every answer category gets at least one example, so rare ones are not forgotten.
+- **MIPROv2**, the default, also has a model draft several alternative instructions, then
+  tries different pairings of instructions and examples, scoring each on validation.
+- **GEPA** reads the mistakes -- which question, what was expected, what came back -- and
+  has a second model -- `models.reflection` in `config.yaml` -- rewrite the instructions
+  to fix them.
+
+Each experiment changes one thing, and is recorded with its score, question by question.
+The best so far is kept, and the next experiment starts from it.
+
+**Why the limits.** Every version tried costs model calls, and a search that runs too long
+starts fitting the quirks of the validation pile instead of getting better at the task --
+like memorizing a practice test. So the number of experiments is fixed before starting,
+and the holdout decides the result, not the validation score. If the winner does much
+worse on the holdout than on validation, the search overfitted, and the report says so.
+
+**The result.** The winning version is saved and run on every document, with checks that
+nothing was skipped and that the answers look like the labeled sample. Out come a file of
+answers for the whole pile and a report of how accurate they are, measured on the holdout.
+
 ## Developing the harness
 
 ```
