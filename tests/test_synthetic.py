@@ -1,6 +1,6 @@
 """The synthetic corpus generator, tested offline.
 
-The dogfood run needs a real model; the corpus it runs on does not, and a broken generator
+The end-to-end run needs a real model; the corpus it runs on does not, and a broken generator
 would make the acceptance test meaningless rather than failing.
 """
 
@@ -50,7 +50,7 @@ def test_specs_are_deterministic() -> None:
     assert first == second == [f"doc_{i:02d}" for i in range(20)]
 
 
-def test_every_class_clears_the_dogfood_floor(registry: Registry, corpus: Path) -> None:
+def test_every_class_clears_the_synthetic_floor(registry: Registry, corpus: Path) -> None:
     """Twenty documents is few; a random draw would leave classes with one example."""
     records = load_labels(corpus / "data" / "labels.jsonl")
     for task_id, supports in class_supports(registry, records).items():

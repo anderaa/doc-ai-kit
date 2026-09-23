@@ -411,7 +411,7 @@ def _verify(registry: Registry, records: Sequence[LabelRecord], splits: Splits) 
 def keyword_stratum(texts: Mapping[str, str], pattern: str) -> list[str]:
     """Return documents whose cached text matches a pattern.
 
-    Model-independent by construction, which is the point: it can surface examples the
+    Model-independent by construction, which is the point: it can find examples the
     model would never nominate because it never finds them.
 
     :param texts: Document id to extracted text
@@ -429,7 +429,7 @@ def model_nominated_stratum(
 ) -> list[str]:
     """Return documents a baseline predicted as the target class.
 
-    Biased on purpose and labeled as such: it cannot surface examples the model misses, so
+    Biased on purpose and labeled as such: it cannot find examples the model misses, so
     recall estimated on this stratum alone is inflated. It is never the only stratum.
 
     :param predictions: Document id to prediction

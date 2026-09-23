@@ -33,7 +33,7 @@ That is what the enrichment strata are for, and why each carries its inclusion p
 
 - **random** -- the only unbiased corpus-level estimate. Never skipped.
 - **keyword** -- model-independent, so it can find what the model cannot.
-- **model_nominated** -- biased: it cannot surface examples the model misses, so recall
+- **model_nominated** -- biased: it cannot find examples the model misses, so recall
   computed on it alone is inflated. Never the only stratum.
 
 Corpus-level metrics weight by the inverse inclusion probability. Per-class metrics are

@@ -1,4 +1,4 @@
-"""Scaffold creation, CLI wiring and phase derivation."""
+"""Scaffold creation, the CLI commands, and working out a project's phase from disk."""
 
 from __future__ import annotations
 
@@ -245,7 +245,7 @@ def test_blind_holdout_is_a_blocker(project: Path, fixtures_dir: Path) -> None:
     assert "inflates every number" in blockers
 
 
-def test_overridden_holdout_is_surfaced(project: Path) -> None:
+def test_overridden_holdout_is_named_in_status(project: Path) -> None:
     holdout = project / "runs" / "holdout"
     holdout.mkdir(parents=True)
     (holdout / ".lock").write_text(

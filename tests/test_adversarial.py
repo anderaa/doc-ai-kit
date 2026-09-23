@@ -86,7 +86,7 @@ def test_similar_company_names_are_a_known_limit(registry: Registry, documents: 
     just over a theta of 0.90. No threshold separates "Hart"/"Harte" (a typo) from
     "Hart"/"Hartley" (another firm), which is why BUILD.md makes borderline fuzzy matches a
     human decision. This test pins the limitation so a change to it is noticed, and checks
-    that adjudication surfaces the case rather than letting it pass silently.
+    that adjudication lists the case rather than letting it pass silently.
     """
     from doc_harness.adjudicate import adjudicate
 

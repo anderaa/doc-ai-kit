@@ -107,7 +107,7 @@ class DocumentSpec:
 
 
 def build_specs(count: int = 20) -> list[DocumentSpec]:
-    """Build the corpus specification, keeping every class above the dogfood support floor.
+    """Build the corpus specification, keeping every class above this run's support floor.
 
     Deterministic rather than random: with twenty documents, a random draw leaves classes
     with one or two examples and the acceptance test stops testing the thing it is for.

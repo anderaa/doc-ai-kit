@@ -42,6 +42,27 @@ elsewhere, and rediscovering it costs another engagement.
 **REPORT.md is regenerated on every close**, so anything written into it by hand is lost. Put
 observations in `REPORT_NOTES.md` instead; close appends them under a **Notes** heading.
 
+## How the report should read
+
+`REPORT.md` is read by people who did not build this: a client, a lawyer, a manager. Write
+for them, in plain English, the way one engineer explains a result to another.
+
+- **Say what happened, in ordinary words.** "The program found 6 of the 14 contracts that cap
+  liability" beats "recall on the positive class was 0.429", though the number belongs there too.
+- **No consulting or startup vocabulary.** Not: leverage, align, operationalize, de-risk, move
+  the needle, stakeholder, bandwidth, north star, surface (as a verb), unpack, pressure-test,
+  load-bearing, high-signal, key takeaway, worth flagging. Plain words say the same thing.
+- **Keep the technical terms that carry meaning.** Precision, recall, holdout, confidence
+  interval are worth using -- explain each once, in a sentence, the first time it appears.
+- **Do not invent names or acronyms** for things that already have ordinary ones.
+- **No praise, no drama, no metaphors** used to sound clever. State the numbers and what they
+  mean for someone deciding whether to rely on this.
+- **Match the length to the result.** A short project gets a short report.
+- **Say plainly what cannot be trusted**, which questions need a person to check, and what the
+  measurement could not cover. A report that only reports good news is not useful.
+
+Write anything of your own into `REPORT_NOTES.md`, in the same voice; close appends it.
+
 ## Exit criteria
 
 - `REPORT.md` written, quoting holdout numbers and naming what the holdout could not measure.

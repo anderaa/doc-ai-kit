@@ -37,6 +37,15 @@ what is next, and what is blocking. Do that before deciding what to work on.
    `config.yaml` are not raised because the results look close. Raising them is a recorded
    decision.
 
+## How to write
+
+`REPORT.md`, `decisions.md` and what you say here are read by people who did not build this.
+Plain English, the way one engineer explains a result to another. No consulting or startup
+vocabulary -- leverage, align, de-risk, stakeholder, surface as a verb, load-bearing, key
+takeaway, worth flagging -- and no invented names or acronyms. Keep the technical terms that
+carry meaning, and explain each one once. State what you did, what you found and what is
+left; skip the praise and the summaries of your own reasoning.
+
 ## Decisions
 
 Human decisions -- corrected versus blind labeling, borderline fuzzy matches, the support

@@ -156,6 +156,12 @@ corpus really is.
 any instruction that worked into the harness's `fragments/` library, filed by task type.
 Rediscovering it costs another engagement.
 
+Write `REPORT.md` for people who did not build this. Plain English, no consulting or startup
+vocabulary (leverage, align, de-risk, stakeholder, surface as a verb, load-bearing, key
+takeaway), and no invented names. Keep precision, recall, holdout and confidence interval,
+explaining each once. Say plainly which answers cannot be trusted and what the measurement
+could not cover. Your own additions go in `REPORT_NOTES.md`, which close appends.
+
 ## Decisions worth stopping for
 
 These are judgement calls, not defaults, and each is recorded in `decisions.md` with the

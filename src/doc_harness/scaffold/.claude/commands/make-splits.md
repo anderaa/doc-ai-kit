@@ -69,10 +69,10 @@ Random sampling cannot reach a rare class: at 2% prevalence, 30 examples needs a
 documents. Three strata, each recorded with its inclusion probability:
 
 1. **random** -- never skipped. It is the only unbiased corpus-level estimate you have.
-2. **keyword** -- regex over the text cache. Model-independent, so it can surface examples
+2. **keyword** -- regex over the text cache. Model-independent, so it can find examples
    the model would never find.
 3. **model_nominated** -- baseline predictions of the rare class, plus low-confidence cases.
-   Biased by construction: it cannot surface what the model misses, so recall estimated on
+   Biased by construction: it cannot find what the model misses, so recall estimated on
    it alone is inflated. Never use it as the only stratum.
 
 Corpus-level metrics weight by inverse inclusion probability; per-class metrics do not. Both

@@ -22,7 +22,7 @@ read one number. Compare the vector against the previous run, task by task.
 
 ## Three errors per task, on purpose
 
-`failures.md` samples at most three errors per task. That cap is load-bearing. Given the full
+`failures.md` samples at most three errors per task. That cap matters. Given the full
 error dump, an optimizer -- or a person -- writes rules keyed to individual documents:
 "when the filer is Acme, the counterparty is the other party." Those rules lift the
 validation number and die on the holdout.

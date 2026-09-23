@@ -333,7 +333,7 @@ Read the version's entry in `CHANGELOG.md` first: some releases change how answe
 scored, and numbers from different versions do not compare. Then change the tag in
 `pyproject.toml`, run `make lock && make sync`, follow the entry's upgrade notes, and commit.
 
-## What is load-bearing
+## Why the design is the way it is
 
 Most of the design exists because these projects fail in the same handful of ways, and each
 failure is silent -- the numbers keep going up while the measurement stops meaning anything.
@@ -373,7 +373,7 @@ failure is silent -- the numbers keep going up while the measurement stops meani
   spreadsheet. Rows outside the holdout come prefilled with model answers to correct; holdout
   rows come empty, and the model is never run on them. Import reads each cell with the
   scoring normalizers and refuses a label that could not be scored.
-- **Threshold decisions are surfaced, not buried.** `doc-harness adjudicate` lists every call a
+- **Threshold decisions are listed, not buried.** `doc-harness adjudicate` lists every call a
   threshold actually made, raw and normalized side by side, for a human to confirm.
 
 ## Layout

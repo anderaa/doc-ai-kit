@@ -1,4 +1,4 @@
-# Dogfood settings. The floors are low because twenty documents cannot reach a real support
+# Settings for the end-to-end run. The floors are low because twenty documents cannot reach a real support
 # floor; that is a property of the acceptance test, not a recommendation.
 
 models:

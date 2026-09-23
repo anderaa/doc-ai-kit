@@ -159,7 +159,7 @@ def test_few_shot_is_skipped_loudly_without_demos(
     assert "hand-written demonstrations" in caplog.text
 
 
-def test_upstream_problems_are_surfaced(
+def test_upstream_problems_are_named(
     tmp_path: Path,
     toy_registry: Registry,
     toy_examples: list[Any],

@@ -4,6 +4,16 @@ Projects pin one exact harness version. Read the entry for a version before movi
 project onto it: some releases change how answers are scored, and a number measured under
 one version is not comparable with a number measured under another.
 
+## Unreleased
+
+**Does not change scores or prompts.**
+
+- **New projects are told how to write.** `CLAUDE.md`, `close.md` and `protocol.md` now say
+  that `REPORT.md` is for people who did not build the project: plain English, no consulting
+  or startup vocabulary, no invented names, the technical terms that carry meaning explained
+  once, and a plain statement of what cannot be trusted.
+- The harness's own documentation and comments use plain words for the same reason.
+
 ## 0.1.10
 
 **Does not change scores or prompts.** From the first real project's second round of reports.
