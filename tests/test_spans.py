@@ -1,4 +1,4 @@
-"""Spans by quoted text: the model quotes, the harness finds the offsets.
+"""Spans by quoted text: the model quotes, the package finds the offsets.
 
 A model asked for character offsets has to count characters. On the adversarial corpus it
 found the right sentence and placed it 84 characters early, and counting only gets harder
@@ -13,13 +13,13 @@ import dspy
 import pytest
 from dspy.utils.dummies import DummyLM
 
-from doc_harness.dataset import DatasetError, LabelRecord, build_examples
-from doc_harness.metric import build_metric
-from doc_harness.normalize import span as normalize_span
-from doc_harness.program import build_program
-from doc_harness.registry import SPAN_QUOTE_INSTRUCTION, Registry
-from doc_harness.spans import locate_quote
-from doc_harness.values import QuotedSpan, Span
+from doc_ai_kit.dataset import DatasetError, LabelRecord, build_examples
+from doc_ai_kit.metric import build_metric
+from doc_ai_kit.normalize import span as normalize_span
+from doc_ai_kit.program import build_program
+from doc_ai_kit.registry import SPAN_QUOTE_INSTRUCTION, Registry
+from doc_ai_kit.spans import locate_quote
+from doc_ai_kit.values import QuotedSpan, Span
 
 CLAUSE = "This Agreement shall be governed by and construed in accordance with the laws of the State of\nCalifornia."
 DOCUMENT = "4. Governing Law\n" + CLAUSE + " The parties agree to the “exclusive” venue – San Francisco… only."

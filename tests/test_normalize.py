@@ -1,6 +1,6 @@
 """Normalizer tests driven by the adversarial fixture corpus.
 
-Nothing downstream is trustworthy until these pass: every metric the harness reports is
+Nothing downstream is trustworthy until these pass: every metric the package reports is
 computed on normalized values, so a normalizer bug silently rewrites every number.
 """
 
@@ -12,8 +12,8 @@ from typing import Any
 import pytest
 import yaml
 
-from doc_harness.hooks import get_normalizer, registered_names
-from doc_harness.values import PartialDate, Quantity, Span
+from doc_ai_kit.hooks import get_normalizer, registered_names
+from doc_ai_kit.values import PartialDate, Quantity, Span
 
 
 def _load_fixture(fixtures_dir: Path) -> dict[str, Any]:

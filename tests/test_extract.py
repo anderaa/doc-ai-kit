@@ -9,8 +9,8 @@ import pytest
 from reportlab.lib.pagesizes import LETTER
 from reportlab.pdfgen import canvas
 
-from doc_harness.config import ExtractionConfig, TruncationConfig
-from doc_harness.extract import extract_corpus, extract_document, load_texts, truncate
+from doc_ai_kit.config import ExtractionConfig, TruncationConfig
+from doc_ai_kit.extract import extract_corpus, extract_document, load_texts, truncate
 
 
 def make_pdf(path: Path, pages: list[str]) -> Path:
@@ -205,7 +205,7 @@ def test_manifests_from_before_transcription_still_load(tmp_path: Path, corpus: 
 
 def test_uppercase_pdf_extensions_are_found(tmp_path: Path) -> None:
     """Seen in CUAD: 311 of 510 files end in .PDF, and a *.pdf glob skipped every one of them."""
-    from doc_harness.extract import list_pdfs
+    from doc_ai_kit.extract import list_pdfs
 
     pdf_dir = tmp_path / "pdfs"
     pdf_dir.mkdir()
@@ -222,7 +222,7 @@ def test_uppercase_pdf_extensions_are_found(tmp_path: Path) -> None:
 
 
 def test_two_files_with_the_same_document_id_are_refused(tmp_path: Path) -> None:
-    from doc_harness.extract import list_pdfs
+    from doc_ai_kit.extract import list_pdfs
 
     pdf_dir = tmp_path / "pdfs"
     pdf_dir.mkdir()
@@ -242,7 +242,7 @@ def test_two_files_with_the_same_document_id_are_refused(tmp_path: Path) -> None
     ],
 )
 def test_doc_id_from_name(name: str, expected: str) -> None:
-    from doc_harness.extract import doc_id_from_name
+    from doc_ai_kit.extract import doc_id_from_name
 
     assert doc_id_from_name(name) == expected
 

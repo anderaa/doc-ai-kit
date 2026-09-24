@@ -21,12 +21,12 @@ import pytest
 from conftest import document_for
 from litellm.llms.custom_httpx.http_handler import HTTPHandler
 
-from doc_harness import batch as batch_module
-from doc_harness.batch import STATE_FILE, render_requests
-from doc_harness.config import Config
-from doc_harness.produce import produce
-from doc_harness.program import build_program
-from doc_harness.registry import Registry
+from doc_ai_kit import batch as batch_module
+from doc_ai_kit.batch import STATE_FILE, render_requests
+from doc_ai_kit.config import Config
+from doc_ai_kit.produce import produce
+from doc_ai_kit.program import build_program
+from doc_ai_kit.registry import Registry
 
 GOOD = "[[ ## flag ## ]]\ntrue\n\n[[ ## state ## ]]\n{state}\n\n[[ ## number ## ]]\n{number}\n\n[[ ## completed ## ]]"
 GARBLED = "[[ ## flag ## ]]\ntr"

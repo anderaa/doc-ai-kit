@@ -7,10 +7,10 @@ from typing import Any
 
 import pytest
 
-from doc_harness.adjudicate import adjudicate, to_markdown, write_adjudication
-from doc_harness.hooks import get_matcher
-from doc_harness.metric import build_metric
-from doc_harness.registry import Registry
+from doc_ai_kit.adjudicate import adjudicate, to_markdown, write_adjudication
+from doc_ai_kit.hooks import get_matcher
+from doc_ai_kit.metric import build_metric
+from doc_ai_kit.registry import Registry
 
 PERFECT: dict[str, Any] = {
     "has_arbitration_clause": True,

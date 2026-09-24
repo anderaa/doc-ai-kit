@@ -29,9 +29,9 @@ from reportlab.lib.pagesizes import LETTER
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
-from doc_harness.config import ExtractionConfig, TranscriptionConfig
-from doc_harness.dataset import LabelRecord, write_labels
-from doc_harness.extract import extract_corpus
+from doc_ai_kit.config import ExtractionConfig, TranscriptionConfig
+from doc_ai_kit.dataset import LabelRecord, write_labels
+from doc_ai_kit.extract import extract_corpus
 
 logger = logging.getLogger(__name__)
 

@@ -1,0 +1,35 @@
+# {{PROJECT_NAME}}
+
+A doc-ai-kit project, pinned to doc-ai-kit {{PACKAGE_VERSION}}.
+
+## Setup
+
+```
+pyenv virtualenv {{PYTHON_VERSION}} {{PROJECT_SLUG}}
+pyenv local {{PROJECT_SLUG}}
+pip install pip-tools
+make lock
+make sync
+```
+
+## Where to start
+
+```
+doc-ai-kit status
+```
+
+Then read `docs/protocol.md` once, and `CLAUDE.md` for the invariants.
+
+## Layout
+
+```
+tasks.yaml          the tasks, and the source of truth for everything generated
+config.yaml         models, budgets, split seed, thresholds, truncation policy
+custom/             project-specific normalizers, matchers, extractors
+decisions.md        human decisions, recorded as they are made
+data/               labels, splits, the labeling plan and sheet: committed
+  pdfs/, text/      the documents and their cached text: gitignored
+programs/           baseline inputs and compiled programs
+runs/               one directory per scoring run, plus the leaderboard
+REPORT.md           written at close
+```

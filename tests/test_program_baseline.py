@@ -9,13 +9,13 @@ from typing import Any
 import pytest
 from conftest import document_for, scripted_lm
 
-from doc_harness.baseline import BOOTSTRAP, ZERO_SHOT, find_upstream_problems, run_baselines
-from doc_harness.config import Config
-from doc_harness.dataset import LabelRecord, build_examples
-from doc_harness.evaluate import run_program, score_split
-from doc_harness.metric import build_metric
-from doc_harness.program import build_program, instructions_of, load_program, save_program
-from doc_harness.registry import Registry
+from doc_ai_kit.baseline import BOOTSTRAP, ZERO_SHOT, find_upstream_problems, run_baselines
+from doc_ai_kit.config import Config
+from doc_ai_kit.dataset import LabelRecord, build_examples
+from doc_ai_kit.evaluate import run_program, score_split
+from doc_ai_kit.metric import build_metric
+from doc_ai_kit.program import build_program, instructions_of, load_program, save_program
+from doc_ai_kit.registry import Registry
 
 
 @pytest.fixture

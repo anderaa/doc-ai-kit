@@ -9,11 +9,11 @@ from typing import Any
 import pytest
 from conftest import document_for, scripted_lm
 
-from doc_harness.config import Config
-from doc_harness.dataset import LabelRecord, build_examples
-from doc_harness.guards import GuardError, RolloutBudgetExceeded
-from doc_harness.metric import build_metric
-from doc_harness.optimize import (
+from doc_ai_kit.config import Config
+from doc_ai_kit.dataset import LabelRecord, build_examples
+from doc_ai_kit.guards import GuardError, RolloutBudgetExceeded
+from doc_ai_kit.metric import build_metric
+from doc_ai_kit.optimize import (
     MINIBATCH_FLOOR,
     CountingMetric,
     OptimizeError,
@@ -27,7 +27,7 @@ from doc_harness.optimize import (
     require_champion,
     run_experiment,
 )
-from doc_harness.registry import Registry
+from doc_ai_kit.registry import Registry
 
 
 def _records(n: int, rare_at: int = 0) -> list[LabelRecord]:

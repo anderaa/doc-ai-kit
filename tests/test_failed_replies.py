@@ -1,6 +1,6 @@
 """A reply that cannot be read is a failure, never an abstention.
 
-Before this, DSPy filled any field a reply left out with None -- every harness task is
+Before this, DSPy filled any field a reply left out with None -- every package task is
 nullable -- and dspy.Evaluate replaced a program that raised with an empty prediction. Both
 read as the model declining to answer. A failure scored that way earns credit wherever the
 gold is null, drags recall down elsewhere, and says nothing about what happened.
@@ -18,16 +18,16 @@ from conftest import StubProvider, document_for, real_lm
 from dspy.utils.dummies import DummyLM
 from dspy.utils.exceptions import AdapterParseError
 
-from doc_harness.adapters import (
+from doc_ai_kit.adapters import (
     StrictChatAdapter,
     StrictJSONAdapter,
     chat_fields_present,
     json_fields_present,
     strict_version_of,
 )
-from doc_harness.config import Config
-from doc_harness.dataset import LabelRecord, build_examples
-from doc_harness.evaluate import (
+from doc_ai_kit.config import Config
+from doc_ai_kit.dataset import LabelRecord, build_examples
+from doc_ai_kit.evaluate import (
     FAILED_REPLY,
     EvaluationError,
     FailedReply,
@@ -36,10 +36,10 @@ from doc_harness.evaluate import (
     score_split,
     write_run,
 )
-from doc_harness.metric import build_metric
-from doc_harness.program import build_program
-from doc_harness.registry import Registry
-from doc_harness.report import run_holdout
+from doc_ai_kit.metric import build_metric
+from doc_ai_kit.program import build_program
+from doc_ai_kit.registry import Registry
+from doc_ai_kit.report import run_holdout
 
 GOOD = {"flag": "true", "state": "CA", "number": "A-1"}
 GARBLED = {"nonsense": "cut off mid-answ"}
@@ -118,8 +118,8 @@ def test_a_failed_reply_never_earns_credit_on_any_task(fixtures_dir: Path) -> No
 
 def test_the_sentinel_is_neither_null_nor_matchable(fixtures_dir: Path) -> None:
     """If any normalizer read it as null, a failure would score as an abstention again."""
-    from doc_harness.evaluate import is_abstention
-    from doc_harness.hooks import get_normalizer
+    from doc_ai_kit.evaluate import is_abstention
+    from doc_ai_kit.hooks import get_normalizer
 
     registry = Registry.from_yaml(fixtures_dir / "tasks_all_types.yaml")
     for task in registry:

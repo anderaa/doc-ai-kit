@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from doc_harness.dataset import (
+from doc_ai_kit.dataset import (
     DatasetError,
     LabelRecord,
     Splits,
@@ -20,7 +20,7 @@ from doc_harness.dataset import (
     write_labels,
     write_splits,
 )
-from doc_harness.registry import Registry
+from doc_ai_kit.registry import Registry
 
 
 def _records() -> list[LabelRecord]:
@@ -122,7 +122,7 @@ def test_missing_split_fails_loudly() -> None:
 
 
 def test_missing_splits_file_says_what_to_do(tmp_path: Path) -> None:
-    with pytest.raises(DatasetError, match="doc-harness make-splits"):
+    with pytest.raises(DatasetError, match="doc-ai-kit make-splits"):
         load_splits(tmp_path / "splits.json")
 
 

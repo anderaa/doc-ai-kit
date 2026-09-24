@@ -1,4 +1,4 @@
-# The synthetic project exercises every task type the harness supports. It is the acceptance
+# The synthetic project exercises every task type the package supports. It is the acceptance
 # test for the hook design, not a demonstration of achievable accuracy: twenty documents
 # cannot measure anything, and the report says so.
 
@@ -59,7 +59,7 @@ tasks:
 
   - id: governing_law_span
     type: span
-    # describes which passage; the harness asks for it as a quote and finds the offsets itself
+    # describes which passage; the package asks for it as a quote and finds the offsets itself
     question: >
       The sentence stating which state's law governs the agreement.
     match: {matcher: span, overlap_threshold: 0.5}

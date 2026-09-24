@@ -12,8 +12,8 @@ from typing import Any
 import pytest
 import yaml
 
-from doc_harness.hooks import get_matcher, registered_names
-from doc_harness.values import MatchResult
+from doc_ai_kit.hooks import get_matcher, registered_names
+from doc_ai_kit.values import MatchResult
 
 COUNT_FIELDS = ("tp", "fp", "fn", "tn")
 
@@ -120,8 +120,8 @@ def test_fuzzy_threshold_is_monotone(theta: float) -> None:
 
 def test_unit_aliases_are_accepted_in_tasks_yaml() -> None:
     """Reported from a real run: the normalizer read unit_aliases, but tasks.yaml refused the key."""
-    from doc_harness.metric import build_metric
-    from doc_harness.registry import Registry
+    from doc_ai_kit.metric import build_metric
+    from doc_ai_kit.registry import Registry
 
     registry = Registry.from_mapping(
         {

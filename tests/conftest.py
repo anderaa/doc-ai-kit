@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 if TYPE_CHECKING:
-    from doc_harness.registry import Registry
+    from doc_ai_kit.registry import Registry
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -35,7 +35,7 @@ def pytest_configure(config: pytest.Config) -> None:
 @pytest.fixture
 def toy_registry(fixtures_dir: Path) -> Registry:
     """Return the three-task toy registry."""
-    from doc_harness.registry import Registry
+    from doc_ai_kit.registry import Registry
 
     return Registry.from_yaml(fixtures_dir / "toy_tasks.yaml")
 

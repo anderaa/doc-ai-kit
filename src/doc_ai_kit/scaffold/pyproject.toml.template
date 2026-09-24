@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "{{PROJECT_SLUG}}"
+version = "0.1.0"
+description = "doc-ai-kit project: {{PROJECT_NAME}}"
+requires-python = ">={{PYTHON_REQUIRES}}"
+dependencies = [
+    # exact pin: the package is a fixed dependency of this project, never hand-edited
+    "{{HARNESS_PIN}}",
+]
+
+[tool.black]
+line-length = 120
+
+[tool.ruff]
+line-length = 120
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

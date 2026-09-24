@@ -17,11 +17,11 @@ from typing import Any
 import pytest
 from conftest import load_example
 
-from doc_harness.dataset import LabelRecord
-from doc_harness.metric import build_metric
-from doc_harness.registry import Registry, TaskType
-from doc_harness.splits import class_supports
-from doc_harness.values import Quantity
+from doc_ai_kit.dataset import LabelRecord
+from doc_ai_kit.metric import build_metric
+from doc_ai_kit.registry import Registry, TaskType
+from doc_ai_kit.splits import class_supports
+from doc_ai_kit.values import Quantity
 
 EXAMPLES = Path(__file__).resolve().parents[1] / "examples" / "adversarial"
 _adversarial = load_example("adversarial")
@@ -88,7 +88,7 @@ def test_similar_company_names_are_a_known_limit(registry: Registry, documents: 
     human decision. This test pins the limitation so a change to it is noticed, and checks
     that adjudication lists the case rather than letting it pass silently.
     """
-    from doc_harness.adjudicate import adjudicate
+    from doc_ai_kit.adjudicate import adjudicate
 
     document = next(d for d in documents if d.traps["counterparty"].kind == "ampersand")
     labels = {"doc_id": document.doc_id, **document.labels()}

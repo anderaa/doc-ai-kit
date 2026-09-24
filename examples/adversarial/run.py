@@ -2,11 +2,11 @@
 
 This is a matcher check, not an accuracy measurement. It deliberately scores all 24
 documents rather than a validation split, because the point is to collect as many real
-threshold decisions as possible for `doc-harness adjudicate`. The number it prints is not an
+threshold decisions as possible for `doc-ai-kit adjudicate`. The number it prints is not an
 estimate of anything and should not be quoted as one.
 
 Predictions are saved with the run, so fixing a matcher afterwards and re-scoring costs no
-inference: `doc-harness rescore adversarial_zero_shot`.
+inference: `doc-ai-kit rescore adversarial_zero_shot`.
 """
 
 from __future__ import annotations
@@ -18,10 +18,10 @@ from typing import Any
 
 import dspy
 
-from doc_harness.cli import Project
-from doc_harness.dataset import load_labels
-from doc_harness.evaluate import run_program, score_split, write_run
-from doc_harness.program import build_program
+from doc_ai_kit.cli import Project
+from doc_ai_kit.dataset import load_labels
+from doc_ai_kit.evaluate import run_program, score_split, write_run
+from doc_ai_kit.program import build_program
 
 DEFAULT_RUN_ID = "adversarial_zero_shot"
 
@@ -121,7 +121,7 @@ def main() -> None:
         f"{usage['output_tokens']:,} output tokens ({usage['reasoning_tokens']:,} thinking), "
         f"{usage['truncated_replies']} truncated, ${usage['cost_usd']:.2f}"
     )
-    print(f"Wrote {project.runs / run_id}. Next: doc-harness --project {args.project} adjudicate {run_id}")
+    print(f"Wrote {project.runs / run_id}. Next: doc-ai-kit --project {args.project} adjudicate {run_id}")
 
 
 if __name__ == "__main__":

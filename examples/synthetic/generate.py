@@ -1,4 +1,4 @@
-"""Generate the synthetic corpus used as the harness's acceptance test.
+"""Generate the synthetic corpus used as doc-ai-kit's acceptance test.
 
 Twenty short agreements covering every task type. The span task's gold values are computed
 *after* extraction, against the cached text, because a character offset only means anything
@@ -16,9 +16,9 @@ from reportlab.lib.pagesizes import LETTER
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
-from doc_harness.config import ExtractionConfig, TranscriptionConfig
-from doc_harness.dataset import LabelRecord, load_labels, write_labels
-from doc_harness.extract import extract_corpus
+from doc_ai_kit.config import ExtractionConfig, TranscriptionConfig
+from doc_ai_kit.dataset import LabelRecord, load_labels, write_labels
+from doc_ai_kit.extract import extract_corpus
 
 logger = logging.getLogger(__name__)
 
@@ -288,7 +288,7 @@ def mark_holdout_blind(project_dir: Path) -> int:
     :param project_dir: The synthetic project's root
     :returns: How many records were marked
     """
-    from doc_harness.dataset import load_splits
+    from doc_ai_kit.dataset import load_splits
 
     data = project_dir / "data"
     splits = load_splits(data / "splits.json")

@@ -1,4 +1,4 @@
-# every task type the harness supports, used to prove the registry covers the matrix
+# every task type the package supports, used to prove the registry covers the matrix
 tasks:
   - id: has_arbitration_clause
     type: binary

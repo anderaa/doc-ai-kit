@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from doc_harness.config import Config, ConfigError
-from doc_harness.program import task_lm
+from doc_ai_kit.config import Config, ConfigError
+from doc_ai_kit.program import task_lm
 
 
 def _config(**models: object) -> Config:

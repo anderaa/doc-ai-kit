@@ -9,13 +9,13 @@ from typing import Any
 import pytest
 from conftest import document_for, scripted_lm
 
-from doc_harness.config import Config
-from doc_harness.dataset import LabelRecord, build_examples
-from doc_harness.guards import GuardError
-from doc_harness.metric import build_metric
-from doc_harness.program import build_program
-from doc_harness.registry import Registry
-from doc_harness.report import (
+from doc_ai_kit.config import Config
+from doc_ai_kit.dataset import LabelRecord, build_examples
+from doc_ai_kit.guards import GuardError
+from doc_ai_kit.metric import build_metric
+from doc_ai_kit.program import build_program
+from doc_ai_kit.registry import Registry
+from doc_ai_kit.report import (
     LEDGER_COLUMNS,
     NOTES_FILE,
     TaskGap,
@@ -215,7 +215,7 @@ def test_write_report_assembles_sections(tmp_path: Path) -> None:
     path = write_report(tmp_path, ["# Baselines\n\nfirst", "# Holdout\n\nsecond"], title="Toy project")
     text = path.read_text(encoding="utf-8")
     assert text.startswith("# Toy project")
-    assert "doc-harness" in text
+    assert "doc-ai-kit" in text
     assert text.index("# Baselines") < text.index("# Holdout")
 
 

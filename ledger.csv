@@ -1,2 +1,2 @@
-closed_at,project,harness_version,task_types,n_documents,k_labeled,baseline_holdout,compiled_holdout,labeling_hours,cost_usd,notes
+closed_at,project,package_version,task_types,n_documents,k_labeled,baseline_holdout,compiled_holdout,labeling_hours,cost_usd,notes
 2026-09-22T20:20:10+00:00,doc-proc-demo-1,0.1.8,"binary,extract_date,extract_list,extract_numeric,multiclass,multilabel,span",509,120,,0.822,5.0,52.0,

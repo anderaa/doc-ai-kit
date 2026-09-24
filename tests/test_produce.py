@@ -10,8 +10,8 @@ from typing import Any
 import pytest
 from conftest import StubProvider, document_for, real_lm, scripted_lm
 
-from doc_harness.config import Config
-from doc_harness.produce import (
+from doc_ai_kit.config import Config
+from doc_ai_kit.produce import (
     DocumentOutcome,
     ProductionResult,
     produce,
@@ -20,8 +20,8 @@ from doc_harness.produce import (
     write_outputs,
     write_qa_report,
 )
-from doc_harness.program import build_program
-from doc_harness.registry import Registry
+from doc_ai_kit.program import build_program
+from doc_ai_kit.registry import Registry
 
 CORPUS = 12
 
@@ -359,7 +359,7 @@ def test_each_retry_uses_its_own_rollout(tmp_path: Path, toy_registry: Registry,
 
 def test_typed_values_reach_the_deliverable_as_structured_json(tmp_path: Path) -> None:
     """outputs.jsonl is what the client gets: no Python repr strings in it, ever."""
-    from doc_harness.values import PartialDate, Quantity, Span
+    from doc_ai_kit.values import PartialDate, Quantity, Span
 
     values = {
         "contract_value": Quantity(value=375000.0, unit="USD"),
@@ -376,8 +376,8 @@ def test_typed_values_reach_the_deliverable_as_structured_json(tmp_path: Path) -
 
 def test_a_resumed_run_reads_structured_values_back(tmp_path: Path) -> None:
     """A checkpoint written as repr text would come back as a string on resume."""
-    from doc_harness.produce import _load_checkpoint, _write_checkpoint
-    from doc_harness.values import Quantity
+    from doc_ai_kit.produce import _load_checkpoint, _write_checkpoint
+    from doc_ai_kit.values import Quantity
 
     raw_dir = tmp_path / "raw"
     _write_checkpoint(raw_dir, DocumentOutcome(doc_id="d1", values={"contract_value": Quantity(value=5.0, unit="USD")}))

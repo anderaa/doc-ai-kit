@@ -6,9 +6,9 @@ import random
 
 import pytest
 
-from doc_harness.dataset import LabelRecord
-from doc_harness.registry import Registry
-from doc_harness.splits import (
+from doc_ai_kit.dataset import LabelRecord
+from doc_ai_kit.registry import Registry
+from doc_ai_kit.splits import (
     ClassSupport,
     SplitError,
     SupportDecision,

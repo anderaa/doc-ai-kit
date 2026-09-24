@@ -13,10 +13,10 @@ from click.testing import CliRunner
 from conftest import document_for, scripted_lm
 from openpyxl import load_workbook
 
-from doc_harness.cli import Project, cli
-from doc_harness.dataset import LabelRecord, load_labels
-from doc_harness.extract import doc_id_from_name
-from doc_harness.labeling import (
+from doc_ai_kit.cli import Project, cli
+from doc_ai_kit.dataset import LabelRecord, load_labels
+from doc_ai_kit.extract import doc_id_from_name
+from doc_ai_kit.labeling import (
     CellError,
     LabelingError,
     LabelPlan,
@@ -28,11 +28,11 @@ from doc_harness.labeling import (
     render_cell,
     write_sheet,
 )
-from doc_harness.metric import build_metric
-from doc_harness.registry import Registry
-from doc_harness.scaffold_writer import ScaffoldOptions, create_project
-from doc_harness.splits import make_splits
-from doc_harness.state import derive
+from doc_ai_kit.metric import build_metric
+from doc_ai_kit.registry import Registry
+from doc_ai_kit.scaffold_writer import ScaffoldOptions, create_project
+from doc_ai_kit.splits import make_splits
+from doc_ai_kit.state import derive
 
 DOCUMENT = (
     "MASTER SERVICES AGREEMENT No. 00417\n"
@@ -180,7 +180,7 @@ def test_every_label_survives_the_round_trip_through_a_cell(registry: Registry) 
 
 
 def test_model_answers_render_as_a_person_would_write_them(registry: Registry) -> None:
-    from doc_harness.values import PartialDate, Quantity, Span
+    from doc_ai_kit.values import PartialDate, Quantity, Span
 
     assert render_cell(registry.by_id("contract_value"), Quantity(value=3250000.0, unit="USD")) == "3,250,000 USD"
     assert render_cell(registry.by_id("contract_value"), Quantity(value=0.5, unit=None)) == "0.5"
@@ -386,7 +386,7 @@ def _fill_sheet(path: Path, answer: dict[str, str], only: set[str] | None = None
 
 
 def test_labeling_end_to_end(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    import doc_harness.produce as produce_module
+    import doc_ai_kit.produce as produce_module
 
     seen: list[str] = []
     real_produce = produce_module.produce

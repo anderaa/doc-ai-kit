@@ -12,9 +12,9 @@ from typing import Any
 import pytest
 from click.testing import CliRunner
 
-from doc_harness.config import Config
-from doc_harness.guards import GuardError
-from doc_harness.spend import check_budget, load, record_spend, spent_usd, totals
+from doc_ai_kit.config import Config
+from doc_ai_kit.guards import GuardError
+from doc_ai_kit.spend import check_budget, load, record_spend, spent_usd, totals
 
 SONNET = "anthropic/claude-sonnet-5"
 USAGE = {SONNET: {"prompt_tokens": 1_000_000, "completion_tokens": 100_000}}
@@ -87,8 +87,8 @@ def test_the_cli_refuses_a_paid_command_over_budget(tmp_path: Path, fixtures_dir
     """The gate is code, not advice: `compile` stops before spending anything more."""
     import yaml
 
-    from doc_harness.cli import cli
-    from doc_harness.scaffold_writer import ScaffoldOptions, create_project
+    from doc_ai_kit.cli import cli
+    from doc_ai_kit.scaffold_writer import ScaffoldOptions, create_project
 
     project = tmp_path / "acme"
     create_project(project, ScaffoldOptions(project_name="Acme"))

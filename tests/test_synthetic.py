@@ -12,10 +12,10 @@ from pathlib import Path
 import pytest
 from conftest import load_example
 
-from doc_harness.dataset import build_examples, load_labels, load_splits
-from doc_harness.metric import build_metric
-from doc_harness.registry import Registry, TaskType
-from doc_harness.splits import class_supports, make_splits
+from doc_ai_kit.dataset import build_examples, load_labels, load_splits
+from doc_ai_kit.metric import build_metric
+from doc_ai_kit.registry import Registry, TaskType
+from doc_ai_kit.splits import class_supports, make_splits
 
 EXAMPLES = Path(__file__).resolve().parents[1] / "examples" / "synthetic"
 _synthetic = load_example("synthetic")
@@ -112,8 +112,8 @@ def test_extraction_manifest_is_written(corpus: Path) -> None:
 
 def test_gold_spans_read_back_as_the_governing_law_sentence(registry: Registry, corpus: Path) -> None:
     """Against real extracted text: each gold span, carried as a quote, is exactly the clause."""
-    from doc_harness.extract import load_texts
-    from doc_harness.values import QuotedSpan
+    from doc_ai_kit.extract import load_texts
+    from doc_ai_kit.values import QuotedSpan
 
     records = load_labels(corpus / "data" / "labels.jsonl")
     texts = load_texts(corpus / "data" / "text", [record.doc_id for record in records])

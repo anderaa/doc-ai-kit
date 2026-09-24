@@ -10,10 +10,10 @@ import pytest
 import yaml
 from click.testing import CliRunner
 
-from doc_harness import __version__
-from doc_harness.cli import cli, newproject
-from doc_harness.scaffold_writer import ScaffoldError, ScaffoldOptions, create_project
-from doc_harness.state import derive
+from doc_ai_kit import __version__
+from doc_ai_kit.cli import cli, newproject
+from doc_ai_kit.scaffold_writer import ScaffoldError, ScaffoldOptions, create_project
+from doc_ai_kit.state import derive
 
 
 @pytest.fixture
@@ -58,24 +58,24 @@ def test_scaffold_writes_the_guidance_layer(project: Path) -> None:
     assert skills == ["matcher-semantics", "reading-failures", "sample-sizes", "task-types"]
 
 
-def test_scaffold_pins_an_exact_harness_version(project: Path) -> None:
+def test_scaffold_pins_an_exact_package_version(project: Path) -> None:
     """The pin is why newproject has to run outside a project -- and it has to resolve.
 
-    An unpublishable `doc-harness==X.Y.Z` looks like a correct exact pin and fails at the
+    An unpublishable `doc-ai-kit==X.Y.Z` looks like a correct exact pin and fails at the
     project's first `make sync`, which is the worst moment to find out.
     """
     text = (project / "pyproject.toml").read_text(encoding="utf-8")
-    assert f"git+https://github.com/anderaa/doc-harness.git@v{__version__}" in text
-    assert "doc-harness>=" not in text
+    assert f"git+https://github.com/anderaa/doc-ai-kit.git@v{__version__}" in text
+    assert "doc-ai-kit>=" not in text
 
 
 @pytest.mark.parametrize(
     "options,expected",
     [
-        (ScaffoldOptions(project_name="p", pin_mode="pypi"), f"doc-harness=={__version__}"),
+        (ScaffoldOptions(project_name="p", pin_mode="pypi"), f"doc-ai-kit=={__version__}"),
         (
             ScaffoldOptions(project_name="p", pin_mode="git", repo="https://example.invalid/h.git"),
-            f"doc-harness @ git+https://example.invalid/h.git@v{__version__}",
+            f"doc-ai-kit @ git+https://example.invalid/h.git@v{__version__}",
         ),
     ],
 )
@@ -84,8 +84,8 @@ def test_pin_modes(options: ScaffoldOptions, expected: str) -> None:
 
 
 def test_path_pin_is_absolute(tmp_path: Path) -> None:
-    options = ScaffoldOptions(project_name="p", pin_mode="path", harness_path=tmp_path)
-    assert options.pin == f"doc-harness @ file://{tmp_path.resolve()}"
+    options = ScaffoldOptions(project_name="p", pin_mode="path", package_path=tmp_path)
+    assert options.pin == f"doc-ai-kit @ file://{tmp_path.resolve()}"
 
 
 def test_unknown_pin_mode_fails_loudly() -> None:
@@ -94,7 +94,7 @@ def test_unknown_pin_mode_fails_loudly() -> None:
 
 
 def test_path_pin_needs_a_path() -> None:
-    with pytest.raises(ScaffoldError, match="needs --harness-path"):
+    with pytest.raises(ScaffoldError, match="needs --package-path"):
         ScaffoldOptions(project_name="p", pin_mode="path")
 
 
@@ -131,7 +131,7 @@ def test_scaffold_creates_the_working_directories(project: Path) -> None:
 
 
 def test_config_has_no_model_default(project: Path) -> None:
-    """A harness that silently picks a model is a harness that silently spends money."""
+    """A package that silently picks a model is a package that silently spends money."""
     config = yaml.safe_load((project / "config.yaml").read_text(encoding="utf-8"))
     assert config["models"]["task"] is None
     assert config["models"]["reflection"] is None
@@ -152,7 +152,7 @@ def test_newproject_command(tmp_path: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(newproject, ["Beta Filings", "--directory", str(tmp_path / "beta")])
     assert result.exit_code == 0, result.output
-    assert "pinned to doc-harness" in result.output
+    assert "pinned to doc-ai-kit" in result.output
     assert (tmp_path / "beta" / "tasks.yaml").exists()
 
 
@@ -368,7 +368,7 @@ def test_status_counts_pdfs_whatever_the_case_of_their_extension(project: Path) 
 
 def test_excluded_classes_are_written_into_config_keeping_its_comments(project: Path) -> None:
     """Reported from a real run: make-splits printed 61 lines for a human to paste."""
-    from doc_harness.config import Config, add_excluded_classes
+    from doc_ai_kit.config import Config, add_excluded_classes
 
     path = project / "config.yaml"
     before = path.read_text(encoding="utf-8")

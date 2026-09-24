@@ -8,14 +8,14 @@ from typing import Any
 import pytest
 import yaml
 
-from doc_harness.registry import (
+from doc_ai_kit.registry import (
     ExtractFuzzyTask,
     MulticlassTask,
     Registry,
     TaskSpecError,
     TaskType,
 )
-from doc_harness.values import PartialDate, Quantity
+from doc_ai_kit.values import PartialDate, Quantity
 
 
 @pytest.fixture

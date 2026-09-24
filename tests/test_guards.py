@@ -10,7 +10,7 @@ from unittest import mock
 
 import pytest
 
-from doc_harness.guards import (
+from doc_ai_kit.guards import (
     GuardError,
     check_experiment_budget,
     check_rollout_budget,
@@ -104,7 +104,7 @@ def test_experiment_budget_on_a_fresh_project(tmp_path: Path) -> None:
 
 
 def test_rollout_budget() -> None:
-    from doc_harness.guards import RolloutBudgetExceeded
+    from doc_ai_kit.guards import RolloutBudgetExceeded
 
     check_rollout_budget(9, 10)
     with pytest.raises(RolloutBudgetExceeded, match="rollout budget of 10 is spent"):
@@ -117,7 +117,7 @@ def test_a_spent_rollout_budget_is_not_an_ordinary_exception() -> None:
     The metric runs inside DSPy's workers, which catch Exception, log it and continue. Only
     a BaseException escapes them and stops the run.
     """
-    from doc_harness.guards import RolloutBudgetExceeded
+    from doc_ai_kit.guards import RolloutBudgetExceeded
 
     assert not issubclass(RolloutBudgetExceeded, Exception)
     caught = None
@@ -150,13 +150,13 @@ def test_builtin_hooks_are_registered_before_any_thread_sees_them() -> None:
     import importlib
     import threading
 
-    from doc_harness import hooks
+    from doc_ai_kit import hooks
 
     real_import = importlib.import_module
     started = threading.Event()
 
     def slow_import(name: str, package: str | None = None) -> Any:
-        if name == "doc_harness.normalize":
+        if name == "doc_ai_kit.normalize":
             started.set()
             time.sleep(0.05)
             # an import that has already run registers nothing the second time, so the

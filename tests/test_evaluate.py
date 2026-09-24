@@ -14,16 +14,16 @@ from typing import Any
 import pytest
 import yaml
 
-from doc_harness.evaluate import (
+from doc_ai_kit.evaluate import (
     EvaluationResult,
     load_predictions,
     null_rates_from_metrics,
     score_split,
     write_run,
 )
-from doc_harness.metric import build_metric
-from doc_harness.registry import Registry
-from doc_harness.values import PartialDate, Quantity, Span
+from doc_ai_kit.metric import build_metric
+from doc_ai_kit.registry import Registry
+from doc_ai_kit.values import PartialDate, Quantity, Span
 
 # support floors set low so the toy split's classes count as measurable
 TOY_SUPPORT_FLOOR = 2
@@ -165,7 +165,7 @@ def test_written_metrics_json_matches(tmp_path: Path, toy: Any) -> None:
     assert payload["tasks"]["flag"]["counts"] == {"tp": 8, "fp": 2, "fn": 2, "tn": 0}
     assert payload["tasks"]["number"]["precision"] == pytest.approx(0.75)
     # run metadata must be reproducible from the file alone
-    assert payload["metadata"]["harness_version"]
+    assert payload["metadata"]["package_version"]
     assert payload["metadata"]["n_examples"] == 10
     assert payload["metadata"]["support_floor"] == TOY_SUPPORT_FLOOR
 
@@ -383,8 +383,8 @@ def test_unseen_classes_do_not_dilute_macro_f1() -> None:
     of them, and the fallback averaged over every declared class -- including 45 that appear
     in neither the gold labels nor the predictions.
     """
-    from doc_harness.metric import build_metric
-    from doc_harness.registry import Registry
+    from doc_ai_kit.metric import build_metric
+    from doc_ai_kit.registry import Registry
 
     states = ["NY", "CA", "DE", "TX", "FL", "IL", "MA", "WA", "OH", "GA"]
     registry = Registry.from_mapping(

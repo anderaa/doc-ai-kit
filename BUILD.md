@@ -1,6 +1,6 @@
-# BUILD.md — doc-harness
+# BUILD.md — doc-ai-kit
 
-Implementation brief. Build a Python package, `doc-harness`, that runs document
+Implementation brief. Build a Python package, `doc-ai-kit`, that runs document
 classification and extraction projects: a fixed harness plus a per-project scaffold,
 with DSPy doing prompt optimization.
 
@@ -37,7 +37,7 @@ project's `custom/` and registers through hooks.
 ### Harness layout
 
 ```
-src/doc_harness/
+src/doc_ai_kit/
   __init__.py
   registry.py          tasks.yaml -> task specs, DSPy signatures, output types
   extract.py           pdf -> text cache
@@ -60,7 +60,7 @@ tests/
 ### Project layout (what the scaffold produces)
 
 ```
-pyproject.toml         doc-harness==X.Y.Z   exact pin
+pyproject.toml         doc-ai-kit==X.Y.Z   exact pin
 uv.lock
 CLAUDE.md
 docs/protocol.md
@@ -252,7 +252,7 @@ never recompiles.
 `newproject` creates a project directory, writes an exact harness pin, and copies the
 guidance files in. Because the pin lives in the project the CLI creates, `newproject`
 must be runnable outside any project: expose it as a console script and support
-`uv tool install doc-harness` / `uvx --from doc-harness newproject`. Default the pin to
+`uv tool install doc-ai-kit` / `uvx --from doc-ai-kit newproject`. Default the pin to
 the latest released version with a flag to override.
 
 Other CLI commands run from the project's pinned environment: `status`, `audit-labels`,

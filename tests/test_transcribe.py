@@ -14,9 +14,9 @@ from typing import Any
 
 import pytest
 
-from doc_harness.config import ExtractionConfig, TranscriptionConfig
-from doc_harness.extract import extract_corpus, extract_document
-from doc_harness.transcribe import Transcriber
+from doc_ai_kit.config import ExtractionConfig, TranscriptionConfig
+from doc_ai_kit.extract import extract_corpus, extract_document
+from doc_ai_kit.transcribe import Transcriber
 
 TYPED = "\n".join(f"Trustees' report, paragraph {i}: the charity continued its work this year." for i in range(12))
 SCANNED = "Total income | 1,204,500\nTotal expenditure | 998,210"

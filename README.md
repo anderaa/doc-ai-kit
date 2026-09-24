@@ -1,12 +1,12 @@
-# doc-harness
+# doc-ai-kit
 
-A fixed harness for running document classification and extraction projects: PDFs in, a
-holdout-measured accuracy report and a full-corpus output file out, with DSPy doing prompt
-optimization.
+Answering a fixed set of questions about a corpus of PDFs, with a measurement of how often
+the answers are right: PDFs in, an accuracy report measured on held-back documents and a
+full-corpus output file out, with DSPy doing the prompt tuning.
 
-The harness is installed as a versioned package and shared by every project. A project is
-scaffolded separately, pins an exact harness version, and puts its own code in `custom/`.
-The package is never hand-edited from a project.
+doc-ai-kit is installed at an exact version and shared by every project. A project is
+scaffolded separately, pins one version, and puts its own code in `custom/`. The installed
+package is never edited from a project.
 
 ```
 pdfs -> text cache -> DSPy program -> typed outputs -> normalize -> match
@@ -19,7 +19,7 @@ pdfs -> text cache -> DSPy program -> typed outputs -> normalize -> match
 
 A project asks the same questions about every document in a pile: *Which state's law
 governs this contract? What is it worth? Who signed it?* Claude can answer these, but how
-well depends heavily on how it is asked. This harness finds a good way to ask, proves how
+well depends heavily on how it is asked. This package finds a good way to ask, proves how
 well it works, and then asks it of every document.
 
 **The prompt.** For each document, Claude gets a message: some instructions, the questions
@@ -35,7 +35,7 @@ something to search over: it tries versions, scores each one, and keeps the best
 **Scoring.** A version is only as good as its score, so scoring has to be right. People
 label a sample of documents with the correct answers. Each answer Claude gives is compared
 with the label, using rules that forgive differences that do not matter -- "$1.25M" and
-"1,250,000 USD" count as the same -- and not ones that do. Much of this harness exists to
+"1,250,000 USD" count as the same -- and not ones that do. Much of this package exists to
 get that comparison right, because a scorer that marks right answers wrong sends the whole
 search after a problem that is not there.
 
@@ -51,7 +51,7 @@ student's practice problems, practice test and final exam:
 **The search.** DSPy's optimizers are different strategies for trying versions:
 
 - **BootstrapFewShot** runs Claude on training documents, keeps the cases it got entirely
-  right, and adds a few of them to the message as worked examples. The harness makes sure
+  right, and adds a few of them to the message as worked examples. The package makes sure
   every answer category gets at least one example, so rare ones are not forgotten.
 - **MIPROv2**, the default, also has a model draft several alternative instructions, then
   tries different pairings of instructions and examples, scoring each on validation.
@@ -72,11 +72,11 @@ worse on the holdout than on validation, the search overfitted, and the report s
 nothing was skipped and that the answers look like the labeled sample. Out come a file of
 answers for the whole pile and a report of how accurate they are, measured on the holdout.
 
-## Developing the harness
+## Developing the package
 
 ```
-pyenv virtualenv 3.12.11 doc-harness
-pyenv local doc-harness
+pyenv virtualenv 3.12.11 doc-ai-kit
+pyenv local doc-ai-kit
 pip install pip-tools
 make lock
 make sync
@@ -86,8 +86,8 @@ make sync
 
 ## Running a project
 
-Each project is its own GitHub repo. It does not contain the harness: it pins an exact
-harness version and installs it from this repo's tags. Nothing here is forked or copied.
+Each project is its own GitHub repo. It does not contain the package: it pins an exact
+package version and installs it from this repo's tags. Nothing here is forked or copied.
 
 ### Claude works through this with you
 
@@ -112,42 +112,42 @@ when to spend the holdout.
 **What Claude will not do.** Fill in your labels, and especially not the shaded holdout
 rows -- labels written by a model are not human labels, and on the holdout they would
 measure the model against itself. Open the holdout twice, raise the experiment budget, or
-edit the installed harness to get past a gate. Those refusals are enforced in code, not left
+edit the installed package to get past a gate. Those refusals are enforced in code, not left
 to good intentions, and each one explains itself.
 
-**Starting each session**, ask for `doc-harness status` first. Phase is derived from what
+**Starting each session**, ask for `doc-ai-kit status` first. Phase is derived from what
 is actually on disk, so it is right even when the conversation has moved on or is new. Each
 phase also has a slash command -- `/status`, `/extract`, `/label-sheet`, `/make-splits` and
 so on -- that loads that phase's guidance directly.
 
-**If Claude gets stuck**, the fix belongs in the harness, not in the project. A project that
-has to edit the installed package to make progress has found a harness bug worth reporting.
+**If Claude gets stuck**, the fix belongs in the package, not in the project. A project that
+has to edit the installed package to make progress has found a bug in the package worth reporting.
 
 ### What you need first
 
 - pyenv, with the Python the project will use: `pyenv install 3.12.11`.
-- pipx (`brew install pipx`), to run `newproject` without installing the harness anywhere.
+- pipx (`brew install pipx`), to run `newproject` without installing the package anywhere.
 - The GitHub CLI, signed in (`gh auth login`), to create the repo.
 - `ANTHROPIC_API_KEY` set in your shell. Commands that call a model read it from there.
 - Claude Code, for the session that runs the project.
 
 ### 1. Create the project and its repo
 
-Run this **outside** the harness checkout, e.g. from `~/Projects`, so the project does not
+Run this **outside** the package checkout, e.g. from `~/Projects`, so the project does not
 end up nested inside this repo:
 
 ```
 cd ~/Projects
-pipx run --spec "git+https://github.com/anderaa/doc-harness.git@v0.1.11" newproject "Acme Contracts"
+pipx run --spec "git+https://github.com/anderaa/doc-ai-kit.git@v0.2.0" newproject "Acme Contracts"
 cd acme-contracts
 git init
 git add -A
-git commit -m "Start project from doc-harness v0.1.11"
+git commit -m "Start project from doc-ai-kit v0.2.0"
 gh repo create acme-contracts --private --source=. --remote=origin --push
 ```
 
 `newproject` writes a folder named after the project, with the guidance files, a
-`tasks.yaml` and `config.yaml` to fill in, and a `pyproject.toml` that pins the harness to
+`tasks.yaml` and `config.yaml` to fill in, and a `pyproject.toml` that pins the package to
 the tag it was run from. It does not install anything, call a model, or set up git.
 
 Keep the repo private. What it holds -- labels, decisions, task definitions -- describes
@@ -163,7 +163,7 @@ pyenv local acme-contracts
 pip install pip-tools
 make lock
 make sync
-doc-harness status
+doc-ai-kit status
 git add requirements.txt && git commit -m "Lock dependencies" && git push
 ```
 
@@ -180,7 +180,7 @@ claude
 ```
 
 Starting there is what loads the project's `CLAUDE.md` and `.claude/commands/`. Ask it to
-run `doc-harness status` first; `status` always says which step is next. From here the work
+run `doc-ai-kit status` first; `status` always says which step is next. From here the work
 is the conversation described in **Claude works through this with you** above: the steps
 below are what Claude runs, and what you decide along the way. You can also run any command
 yourself -- they are the same commands either way.
@@ -202,7 +202,7 @@ refused. Without prices declared, spend is still recorded in tokens.
 ### 5. Extract the text
 
 ```
-doc-harness extract
+doc-ai-kit extract
 ```
 
 Text is cached in `data/text/` and read by every later step. Scanned pages have no text
@@ -214,8 +214,8 @@ redone. Open a few cached texts to check them, especially transcribed ones.
 ### 6. Label
 
 ```
-doc-harness sample-labels --count 120
-doc-harness label-sheet --prefill        # or --no-prefill
+doc-ai-kit sample-labels --count 120
+doc-ai-kit label-sheet --prefill        # or --no-prefill
 ```
 
 `sample-labels` picks the documents to label, and the holdout among them, at random. Pick
@@ -238,11 +238,11 @@ label, in Excel or Google Sheets:
   not ask Claude to fill them: they measure the final program, and model-written labels
   there would measure the model against itself.
 - A blank cell means the document gives no answer. For a passage, paste the sentence; the
-  harness finds its position.
+  package finds its position.
 - To set a document aside, write `skip: <reason>` in `notes`.
 
 ```
-doc-harness import-labels
+doc-ai-kit import-labels
 ```
 
 The sheet is imported whole, once every row is finished. It lists every problem at once
@@ -252,7 +252,7 @@ is the most expensive thing in the repo.
 ### 7. Audit the labels and write the rules
 
 ```
-doc-harness audit-labels
+doc-ai-kit audit-labels
 ```
 
 Then write `data/annotation_rules.md`: for each task, the rule you actually applied and the
@@ -261,7 +261,7 @@ edge cases you decided. `compile` refuses to run without it. Commit.
 ### 8. Make the splits
 
 ```
-doc-harness make-splits
+doc-ai-kit make-splits
 ```
 
 The holdout drawn in step 6 is kept; the rest is divided into train and validation. For
@@ -275,7 +275,7 @@ Write two or three hand-picked examples into `programs/baseline.py` (`hand_writt
 -- the hard cases and rare classes, not the first rows. Then:
 
 ```
-doc-harness run-baseline
+doc-ai-kit run-baseline
 ```
 
 This records zero-shot, hand-written few-shot and `BootstrapFewShot`, in
@@ -285,19 +285,19 @@ the text or the matcher, and optimization will not fix it: fix it before moving 
 ### 10. Optimize, within the budget
 
 ```
-doc-harness compile --variable "MIPROv2 light, 4 demos"
+doc-ai-kit compile --variable "MIPROv2 light, 4 demos"
 ```
 
 One experiment per run, each changing one thing, named by `--variable`. The best one is
 pinned as the champion, and later experiments start from it. `optimization.max_experiments`
 in `config.yaml` caps the number of runs; it is set before starting, not raised because
 the results look close. Read the per-task numbers and `failures.md` after each run, not only
-the aggregate. `doc-harness adjudicate <run_id>` lists borderline matches for you to check.
+the aggregate. `doc-ai-kit adjudicate <run_id>` lists borderline matches for you to check.
 
 ### 11. Measure the holdout once
 
 ```
-doc-harness holdout
+doc-ai-kit holdout
 ```
 
 This scores the champion on the holdout and writes a lock; a second run is refused unless
@@ -308,7 +308,7 @@ holdout against the table in `docs/protocol.md` and act on it. The reading is re
 ### 12. Run production
 
 ```
-doc-harness production
+doc-ai-kit production
 ```
 
 Runs the champion over every document, through the Batch API, checkpointed so an
@@ -320,14 +320,14 @@ fails if a check fails.
 ### 13. Close
 
 ```
-doc-harness close --labeling-hours 14 --cost-usd 38.50
+doc-ai-kit close --labeling-hours 14 --cost-usd 38.50
 ```
 
 Writes `REPORT.md`. Commit it and push. To add the project to the shared record across
-projects, pass `--ledger` with the path to `ledger.csv` in a harness checkout, and commit
+projects, pass `--ledger` with the path to `ledger.csv` in a package checkout, and commit
 that there.
 
-### Moving a project to a newer harness
+### Moving a project to a newer package
 
 Read the version's entry in `CHANGELOG.md` first: some releases change how answers are
 scored, and numbers from different versions do not compare. Then change the tag in
@@ -350,7 +350,7 @@ failure is silent -- the numbers keep going up while the measurement stops meani
   is both a false positive and a false negative.
 - **A reply that cannot be read is a failure, never an abstention.** DSPy fills an omitted
   nullable field with null, which would score a truncated reply as a model declining to
-  answer. The harness parses strictly, retries with a fresh generation, and by default
+  answer. The package parses strictly, retries with a fresh generation, and by default
   refuses to report numbers if a reply still fails.
 - **`failures.md` samples at most three errors per task.** Given the full dump, an optimizer
   writes rules keyed to individual documents that die on the holdout.
@@ -368,18 +368,18 @@ failure is silent -- the numbers keep going up while the measurement stops meani
   in `runs/spend.json`, and a step that would start over `budget.max_usd` is refused. Prices
   are declared per project, because a guessed price is a ceiling that means nothing.
 - **Every run saves its predictions.** Fixing a matcher and re-measuring costs nothing
-  (`doc-harness rescore`), so nobody is tempted to leave the bug in to avoid paying again.
+  (`doc-ai-kit rescore`), so nobody is tempted to leave the bug in to avoid paying again.
 - **The holdout is drawn before any model runs, and labeled blind.** Labeling happens in a
   spreadsheet. Rows outside the holdout come prefilled with model answers to correct; holdout
   rows come empty, and the model is never run on them. Import reads each cell with the
   scoring normalizers and refuses a label that could not be scored.
-- **Threshold decisions are listed, not buried.** `doc-harness adjudicate` lists every call a
+- **Threshold decisions are listed, not buried.** `doc-ai-kit adjudicate` lists every call a
   threshold actually made, raw and normalized side by side, for a human to confirm.
 
 ## Layout
 
 ```
-src/doc_harness/
+src/doc_ai_kit/
   registry.py     tasks.yaml -> task specs, DSPy signatures, output types
   normalize.py    per-type normalizers
   match.py        per-type matchers
@@ -406,15 +406,15 @@ examples/adversarial/  the matcher check: does scoring hold up on documents buil
 
 ## Installing into a project
 
-`newproject` pins the harness exactly, and the pin has to resolve. The default is a git
+`newproject` pins the package exactly, and the pin has to resolve. The default is a git
 tag, because that works today without publishing anything:
 
 ```
-doc-harness @ git+https://github.com/anderaa/doc-harness.git@v0.1.11
+doc-ai-kit @ git+https://github.com/anderaa/doc-ai-kit.git@v0.2.0
 ```
 
-`--pin-mode pypi` switches to `doc-harness==X.Y.Z` once the package is published to an
-index, and `--pin-mode path --harness-path ...` points at a local checkout for harness
+`--pin-mode pypi` switches to `doc-ai-kit==X.Y.Z` once the package is published to an
+index, and `--pin-mode path --package-path ...` points at a local checkout for package
 development. Hashes and git pins are mutually exclusive -- pip cannot hash a checkout -- so
 a git-pinned project locks without `--generate-hashes` and relies on the tag for exactness.
 
@@ -423,13 +423,13 @@ it appears in this README, and pushing a matching `vX.Y.Z` tag. Projects scaffol
 
 ## Known deviations from the brief
 
-**pyenv and pip-tools, not uv.** BUILD.md §9 assumes `uv tool install` / `uvx`. The harness
+**pyenv and pip-tools, not uv.** BUILD.md §9 assumes `uv tool install` / `uvx`. The package
 locks with `pip-compile` and projects use a pyenv virtualenv instead. Nothing else changes:
 the pin is still exact and the lock is still committed.
 
 **Claude transcribes scanned pages, not an OCR engine, and decides page by page.** BUILD.md
 §6 asks for an OCR fallback when a document's characters per page fall below about 100.
-The harness first shipped Tesseract on that whole-document average. The average missed
+The package first shipped Tesseract on that whole-document average. The average missed
 the common case of a mostly typed document with a few scanned pages, and Tesseract loses
 which row a number in a table belongs to. Pages are now judged one by one, and a thin page
 is sent to Claude as an image; the transcription goes into the text cache, so everything

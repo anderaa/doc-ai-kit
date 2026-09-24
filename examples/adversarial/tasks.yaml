@@ -58,7 +58,7 @@ tasks:
 
   - id: governing_law_span
     type: span
-    # describes which passage; the harness asks for it as a quote and finds the offsets itself
+    # describes which passage; the package asks for it as a quote and finds the offsets itself
     question: >
       The sentence stating which state's law governs the agreement.
     match: {matcher: span, overlap_threshold: 0.5}

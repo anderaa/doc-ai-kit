@@ -16,13 +16,13 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[1]
-SCAFFOLD = REPO / "src" / "doc_harness" / "scaffold"
+SCAFFOLD = REPO / "src" / "doc_ai_kit" / "scaffold"
 
 
 def _scaffold_files() -> set[str]:
     """Return every scaffold file, as the path it should occupy inside the wheel."""
     return {
-        f"doc_harness/scaffold/{path.relative_to(SCAFFOLD).as_posix()}"
+        f"doc_ai_kit/scaffold/{path.relative_to(SCAFFOLD).as_posix()}"
         for path in SCAFFOLD.rglob("*")
         if path.is_file() and "__pycache__" not in path.parts
     }
@@ -75,5 +75,5 @@ def test_wheel_exposes_the_console_scripts(wheel: Path) -> None:
         ),
         "",
     )
-    assert "newproject = doc_harness.cli:newproject" in entry_points
-    assert "doc-harness = doc_harness.cli:main" in entry_points
+    assert "newproject = doc_ai_kit.cli:newproject" in entry_points
+    assert "doc-ai-kit = doc_ai_kit.cli:main" in entry_points

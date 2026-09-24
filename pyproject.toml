@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "doc-harness"
-version = "0.1.11"
-description = "A fixed harness for running document classification and extraction projects with DSPy"
+name = "doc-ai-kit"
+version = "0.2.0"
+description = "A fixed package for running document classification and extraction projects with DSPy"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "Proprietary" }
@@ -40,14 +40,14 @@ dev = [
 ]
 
 [project.scripts]
-newproject = "doc_harness.cli:newproject"
-doc-harness = "doc_harness.cli:main"
+newproject = "doc_ai_kit.cli:newproject"
+doc-ai-kit = "doc_ai_kit.cli:main"
 
 [tool.hatch.build.targets.wheel]
 # scaffold/ lives inside the package, so `packages` already carries it. A force-include
 # on top of that adds every scaffold file to the wheel twice and the build fails outright.
-packages = ["src/doc_harness"]
-artifacts = ["src/doc_harness/scaffold/**"]
+packages = ["src/doc_ai_kit"]
+artifacts = ["src/doc_ai_kit/scaffold/**"]
 
 [tool.black]
 line-length = 120

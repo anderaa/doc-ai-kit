@@ -4,6 +4,23 @@ Projects pin one exact harness version. Read the entry for a version before movi
 project onto it: some releases change how answers are scored, and a number measured under
 one version is not comparable with a number measured under another.
 
+## 0.2.0
+
+**Renamed from doc-harness to doc-ai-kit.** Nothing else changes: no scores, no prompts, no
+behaviour. The old name said what the package was to whoever built it; the new one says what it
+is to whoever uses it.
+
+Moving a project onto it:
+
+- Change the pin to `doc-ai-kit @ git+https://github.com/anderaa/doc-ai-kit.git@v0.2.0`, then
+  `make lock && make sync`.
+- The command is now `doc-ai-kit` instead of `doc-harness`. `newproject` is unchanged.
+- Imports in `custom/` change from `doc_harness` to `doc_ai_kit`.
+- `ledger.csv` renames its `harness_version` column to `package_version`. Edit the header of an
+  existing ledger, or let `close` write a fresh one.
+- The GitHub repository is renamed. GitHub redirects the old address, so a project still pinned
+  to `doc-harness` keeps installing until you move it.
+
 ## 0.1.11
 
 **Does not change scores or prompts.**
@@ -55,7 +72,7 @@ one version is not comparable with a number measured under another.
 **Changes scores on classification tasks whose classes are all below the support floor**, where
 macro-F1 counted classes that never appear, and **on `extract_numeric` tasks whose answers carry a unit other than a currency or
 percent**, such as a notice period in days. Money amounts score as before. A finished run can
-be re-scored without inference: `doc-harness rescore <run_id>`.
+be re-scored without inference: `doc-ai-kit rescore <run_id>`.
 
 - **Units are read as words.** The unit of a number was found by deleting every digit and
   space and then stripping a leading magnitude letter, so `1 month` had the unit `onth`,
@@ -105,7 +122,7 @@ by a dry run on CUAD's 510 contracts.
 
 Upgrading a project:
 
-- **Run `doc-harness extract` again.** If any PDFs end in `.PDF`, they were skipped before and
+- **Run `doc-ai-kit extract` again.** If any PDFs end in `.PDF`, they were skipped before and
   will be extracted now; nothing already cached changes.
 - Documents whose file name has a space before `.pdf` get an id without it. If one was already
   extracted or labeled under the old id, run `extract --force` and re-import its labels.
@@ -335,7 +352,7 @@ Upgrading a project:
 
 ## 0.1.2
 
-**Changes scores.** An upgraded project should re-score its runs (`doc-harness rescore
+**Changes scores.** An upgraded project should re-score its runs (`doc-ai-kit rescore
 <run>`, free) before comparing anything against numbers from 0.1.1, and record the upgrade in
 `decisions.md`. A holdout already measured under 0.1.1 stays a 0.1.1 number.
 
@@ -354,7 +371,7 @@ Scoring fixes -- each scored a correct answer as wrong:
 
 New:
 
-- `doc-harness adjudicate <run>` lists every decision a threshold made -- including any
+- `doc-ai-kit adjudicate <run>` lists every decision a threshold made -- including any
   acceptance strict equality would have refused -- with raw and normalized values side by
   side. Reads saved predictions, so it costs nothing.
 - `examples/adversarial/`, a corpus built to trap the matchers, with an offline oracle that
