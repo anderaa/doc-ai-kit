@@ -4,7 +4,7 @@ Projects pin one exact harness version. Read the entry for a version before movi
 project onto it: some releases change how answers are scored, and a number measured under
 one version is not comparable with a number measured under another.
 
-## Unreleased
+## 0.2.1
 
 - **`newproject` and the README print the same steps**, from one definition in the package, so
   they cannot drift apart. The list now ends with `claude`, which starts a session in the new
