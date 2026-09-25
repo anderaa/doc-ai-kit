@@ -71,7 +71,7 @@ from doc_ai_kit.report import (
     write_prompt,
     write_report,
 )
-from doc_ai_kit.scaffold_writer import PACKAGE_REPO, PIN_MODES, ScaffoldOptions, create_project
+from doc_ai_kit.scaffold_writer import PACKAGE_REPO, PIN_MODES, ScaffoldOptions, create_project, setup_steps
 from doc_ai_kit.spend import check_budget, record_spend, totals
 from doc_ai_kit.splits import (
     SUPPORT_OPTIONS,
@@ -1021,15 +1021,13 @@ def newproject(
     )
     target = (directory or Path(options.project_slug)).resolve()
     create_project(target, options, force=force)
+    steps = "\n".join(f"  {step}" for step in setup_steps(target, options.project_slug, python_version))
     click.echo(
         f"Created {target}, pinned to {options.pin}.\n\n"
-        "Next:\n"
-        f"  cd {target}\n"
-        f"  pyenv virtualenv {python_version} {options.project_slug}\n"
-        f"  pyenv local {options.project_slug}\n"
-        "  pip install pip-tools && make lock && make sync\n"
-        "  doc-ai-kit status\n\n"
-        "Then read docs/protocol.md once, and CLAUDE.md for the invariants."
+        f"Next:\n{steps}\n\n"
+        "The last command starts Claude Code in the project. It reads the project's guidance, "
+        "checks where the project stands, and tells you what to do first.\n"
+        "docs/protocol.md explains the whole sequence, and CLAUDE.md lists what must not happen."
     )
 
 

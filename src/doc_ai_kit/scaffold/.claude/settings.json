@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "doc-ai-kit status || echo 'doc-ai-kit is not installed in this environment yet: run make lock && make sync, then doc-ai-kit status'",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

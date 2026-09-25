@@ -3,10 +3,16 @@
 A doc-ai-kit project. Read `docs/protocol.md` once before starting; this file is the
 short list of things that must not happen.
 
-## Run `/status` first
+## Start from `status`, not from this file
 
-Phase is derived from disk, not from this file. `doc-ai-kit status` reports what is done,
-what is next, and what is blocking. Do that before deciding what to work on.
+Phase is derived from disk. A session in this project runs `doc-ai-kit status` on startup
+(see `.claude/settings.json`), so its output is already in front of you: what is done, what
+is next, and what is blocking. Read it and tell the user where the project stands and what
+to do next, before anything else.
+
+If that output is missing -- the package is not installed yet, or the session was resumed in
+an unusual way -- run `doc-ai-kit status` yourself. Never decide the phase from this file or
+from memory of an earlier session.
 
 ## Invariants
 

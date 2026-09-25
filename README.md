@@ -155,35 +155,36 @@ the client's documents. The documents themselves are never committed: `.gitignor
 out `data/pdfs/`, `data/text/` and `data/transcripts/`. `runs/` is left out too, so run results and the holdout
 lock stay on the machine that made them.
 
-### 2. Set up the environment
+### 2. Set up the environment, and start Claude
+
+`newproject` prints these steps; they are repeated here. Copy your PDFs into `data/pdfs/`
+before the last one.
 
 ```
+cd /Users/you/Projects/acme-contracts
 pyenv virtualenv 3.12.11 acme-contracts
 pyenv local acme-contracts
-pip install pip-tools
-make lock
-make sync
+pip install pip-tools && make lock && make sync
 doc-ai-kit status
-git add requirements.txt && git commit -m "Lock dependencies" && git push
+claude
 ```
 
 Until the virtualenv exists, pyenv reports an error inside the folder: `.python-version`
 already names it. `make lock` pins every dependency; commit the result so anyone cloning
-the repo installs exactly the same versions.
-
-### 3. Add the documents and start Claude
-
-Copy the PDFs into `data/pdfs/`, then start Claude Code from inside the project folder:
+the repo installs exactly the same versions:
 
 ```
-claude
+git add requirements.txt && git commit -m "Lock dependencies" && git push
 ```
 
-Starting there is what loads the project's `CLAUDE.md` and `.claude/commands/`. Ask it to
-run `doc-ai-kit status` first; `status` always says which step is next. From here the work
-is the conversation described in **Claude works through this with you** above: the steps
-below are what Claude runs, and what you decide along the way. You can also run any command
-yourself -- they are the same commands either way.
+### 3. What happens when Claude starts
+
+Starting Claude inside the project folder is what loads its `CLAUDE.md`, the phase guidance
+in `.claude/commands/` and `docs/protocol.md`. The session begins by checking `doc-ai-kit
+status`, which reads the project's state from disk, and tells you which step is next and what
+is blocking. That check is a session-start hook in the project's `.claude/settings.json`;
+Claude Code may ask you to trust the folder the first time you open it. From there the work is the conversation described in **Claude works through this
+with you** above. Every command can be run by hand as well; they are the same commands.
 
 ### 4. Declare the tasks and pick the model
 

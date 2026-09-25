@@ -383,3 +383,37 @@ def test_excluded_classes_are_written_into_config_keeping_its_comments(project: 
     assert "# the cost ceiling for this engagement" in after, "comments elsewhere survived"
     assert after.count("excluded_classes:") == 1
     assert len(after.splitlines()) >= len(before.splitlines())
+
+
+def test_the_readme_quotes_the_steps_newproject_prints() -> None:
+    """One sequence, printed by newproject and documented in the README; they must not drift."""
+    from doc_ai_kit.scaffold_writer import setup_steps
+
+    readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
+    steps = setup_steps("/Users/you/Projects/acme-contracts", "acme-contracts", "3.12.11")
+    assert "\n".join(steps) in readme, "README no longer quotes the steps newproject prints"
+
+
+def test_newproject_prints_the_steps_including_starting_claude(tmp_path: Path) -> None:
+    from doc_ai_kit.scaffold_writer import setup_steps
+
+    target = tmp_path / "acme-contracts"
+    result = CliRunner().invoke(newproject, ["Acme Contracts", "--directory", str(target)])
+    assert result.exit_code == 0, result.output
+    for step in setup_steps(target, "acme-contracts", "3.12.11"):
+        assert step in result.output, step
+    assert "claude" in result.output
+
+
+def test_a_session_in_the_project_checks_status_on_startup(project: Path) -> None:
+    """The project's phase comes from disk, so a session should not have to be asked for it."""
+    import json
+
+    settings = json.loads((project / ".claude" / "settings.json").read_text(encoding="utf-8"))
+    entries = settings["hooks"]["SessionStart"]
+    assert entries[0]["matcher"] == "startup|resume"
+    hook = entries[0]["hooks"][0]
+    assert hook["type"] == "command"
+    assert hook["command"].startswith("doc-ai-kit status")
+    # says what to do when the package is not installed yet, rather than failing silently
+    assert "make sync" in hook["command"]

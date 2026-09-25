@@ -4,6 +4,17 @@ Projects pin one exact harness version. Read the entry for a version before movi
 project onto it: some releases change how answers are scored, and a number measured under
 one version is not comparable with a number measured under another.
 
+## Unreleased
+
+- **`newproject` and the README print the same steps**, from one definition in the package, so
+  they cannot drift apart. The list now ends with `claude`, which starts a session in the new
+  project.
+- **A session in a project checks `status` on startup.** New projects carry a session-start hook
+  in `.claude/settings.json` that runs `doc-ai-kit status`, so the phase is in front of the
+  session before its first reply, rather than depending on someone asking for it. If the package
+  is not installed yet, the hook says so instead of failing quietly. The project's `CLAUDE.md`
+  now tells the session to read that output first and say where the project stands.
+
 ## 0.2.0
 
 **Renamed from doc-harness to doc-ai-kit.** Nothing else changes: no scores, no prompts, no

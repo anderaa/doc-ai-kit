@@ -37,6 +37,22 @@ PACKAGE_REPO = "https://github.com/anderaa/doc-ai-kit.git"
 PIN_MODES = ("git", "pypi", "path")
 
 
+def setup_steps(target: Path | str, project_slug: str, python_version: str) -> list[str]:
+    """Return the commands a new project runs first, in order.
+
+    One definition, printed by ``newproject`` and quoted in the package README, so the two
+    cannot drift apart. A test checks the README still contains these lines.
+    """
+    return [
+        f"cd {target}",
+        f"pyenv virtualenv {python_version} {project_slug}",
+        f"pyenv local {project_slug}",
+        "pip install pip-tools && make lock && make sync",
+        "doc-ai-kit status",
+        "claude",
+    ]
+
+
 class ScaffoldError(RuntimeError):
     """Raised when a project directory cannot be created as asked."""
 
